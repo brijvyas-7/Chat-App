@@ -13,6 +13,7 @@
     "express": "^4.17.3",
     "git": "^0.1.5",
     "moment": "^2.29.2",
+    "moment-timezone": "^0.6.0",
     "socket.io": "^2.4.1"
   },
   "devDependencies": {
