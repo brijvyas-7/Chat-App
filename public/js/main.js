@@ -1,33 +1,63 @@
+const notificationSound = new Audio('/sounds/notification.mp3');
 const chatForm = document.getElementById('chat-form');
 const chatMessages = document.getElementById('chat-messages');
 const roomName = document.getElementById('room-name');
 const userList = document.getElementById('users');
 const emojiBtn = document.getElementById('emoji-btn');
 const msgInput = document.getElementById('msg');
-const typingIndicator = document.getElementById('typing-indicator'); // ✅ new
+const typingIndicator = document.getElementById('typing-indicator');
+const muteToggle = document.getElementById('mute-toggle');
+const muteIcon = document.getElementById('mute-icon');
 
+// Parse username and room
 const { username, room } = Qs.parse(location.search, {
   ignoreQueryPrefix: true,
 });
 
+// Setup socket
 const socket = io();
 
-// Join chatroom
+// Mute preference
+let isMuted = localStorage.getItem('muted') === 'true';
+updateMuteIcon();
+
+muteToggle.addEventListener('click', () => {
+  isMuted = !isMuted;
+  localStorage.setItem('muted', isMuted);
+  updateMuteIcon();
+});
+
+function updateMuteIcon() {
+  if (isMuted) {
+    muteIcon.classList.remove('fa-bell');
+    muteIcon.classList.add('fa-bell-slash');
+  } else {
+    muteIcon.classList.remove('fa-bell-slash');
+    muteIcon.classList.add('fa-bell');
+  }
+}
+
+// Join room
 socket.emit('joinRoom', { username, room });
 
-// Update room name and user list
+// Update room and users
 socket.on('roomUsers', ({ room, users }) => {
   outputRoomName(room);
   outputUsers(users);
 });
 
-// Receive message
+// Message received
 socket.on('message', (message) => {
   outputMessage(message);
   chatMessages.scrollTop = chatMessages.scrollHeight;
+
+  // Play notification if not muted and not own message
+  if (message.username !== username && message.username !== 'ChatApp Bot' && !isMuted) {
+    notificationSound.play();
+  }
 });
 
-// ✅ Show typing message
+// Typing indicator
 socket.on('showTyping', ({ username: typer }) => {
   if (typer !== username) {
     typingIndicator.innerText = `${typer} is typing...`;
@@ -36,6 +66,11 @@ socket.on('showTyping', ({ username: typer }) => {
       typingIndicator.innerText = '';
     }, 1500);
   }
+});
+
+// Typing event
+msgInput.addEventListener('input', () => {
+  socket.emit('typing', { username, room });
 });
 
 // Send message
@@ -50,12 +85,7 @@ chatForm.addEventListener('submit', (e) => {
   typingIndicator.innerText = '';
 });
 
-// ✅ Emit typing when typing
-msgInput.addEventListener('input', () => {
-  socket.emit('typing', { username, room });
-});
-
-// Output message to DOM
+// Display message
 function outputMessage({ username: sender, text, time }) {
   const div = document.createElement('div');
   div.classList.add('message');
@@ -78,7 +108,7 @@ function outputMessage({ username: sender, text, time }) {
   chatMessages.appendChild(div);
 }
 
-// Set room name
+// Output room name
 function outputRoomName(room) {
   if (roomName) roomName.innerText = room;
 }
@@ -95,7 +125,7 @@ function outputUsers(users) {
   });
 }
 
-// Leave Chat
+// Leave chat
 const leaveBtn = document.getElementById('leave-btn');
 if (leaveBtn) {
   leaveBtn.addEventListener('click', () => {
@@ -105,7 +135,7 @@ if (leaveBtn) {
   });
 }
 
-// ✅ Emoji Picker Integration (No Blinking)
+// Emoji picker
 const picker = new EmojiButton({
   position: 'top-start',
   theme: document.body.classList.contains('dark') ? 'dark' : 'light',

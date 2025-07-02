@@ -416,3 +416,8 @@ body.dark #emoji-btn:hover {
   color: #fff !important;           /* White text */
   font-style: italic;
 }
+.chat-header .controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
