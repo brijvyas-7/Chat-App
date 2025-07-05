@@ -1,6 +1,6 @@
 const notificationSound = new Audio('/sounds/notification.mp3');
 const chatForm = document.getElementById('chat-form');
-chatMessages = document.getElementById('chat-messages');
+const chatMessages = document.getElementById('chat-messages');
 const roomName = document.getElementById('room-name');
 const userList = document.getElementById('users');
 const emojiBtn = document.getElementById('emoji-btn');
@@ -173,3 +173,49 @@ socket.on('hideTyping', () => {
   typingIndicator.style.display = 'none';
 });
 
+// ================= Theme Toggle and Scroll ==================
+
+document.addEventListener('DOMContentLoaded', () => {
+  const themeToggle = document.getElementById('theme-toggle');
+  const themeIcon = document.getElementById('theme-icon');
+  const chatMessages = document.getElementById('chat-messages');
+
+  // Load saved theme
+  if (localStorage.getItem('theme') === 'dark') {
+    document.body.classList.add('dark');
+    themeIcon.classList.remove('fa-moon');
+    themeIcon.classList.add('fa-sun');
+  }
+
+  // Toggle theme
+  themeToggle.addEventListener('click', () => {
+    document.body.classList.toggle('dark');
+    const isDark = document.body.classList.contains('dark');
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    themeIcon.classList.toggle('fa-moon', !isDark);
+    themeIcon.classList.toggle('fa-sun', isDark);
+  });
+
+  // Scroll to bottom on load
+  scrollToBottom();
+
+  // Auto scroll on new message
+  const observer = new MutationObserver(scrollToBottom);
+  observer.observe(chatMessages, { childList: true });
+
+  function scrollToBottom() {
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+});
+
+// ================= Mobile Keyboard Fix ==================
+const chatFormContainer = document.querySelector('.chat-form-container');
+
+window.addEventListener('resize', () => {
+  if (window.innerHeight < 500) {
+    chatMessages.style.paddingBottom = '200px';
+    window.scrollTo(0, document.body.scrollHeight);
+  } else {
+    chatMessages.style.paddingBottom = '90px';
+  }
+});

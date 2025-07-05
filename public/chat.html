@@ -71,64 +71,6 @@
 
   <script defer src="/socket.io/socket.io.js"></script>
   <script defer src="js/main.js"></script>
-
-  <script>
-    let chatMessages;
-
-    document.addEventListener('DOMContentLoaded', () => {
-      const themeToggle = document.getElementById('theme-toggle');
-      const themeIcon = document.getElementById('theme-icon');
-      chatMessages = document.getElementById('chat-messages');
-
-      // Load saved theme
-      if (localStorage.getItem('theme') === 'dark') {
-        document.body.classList.add('dark');
-        themeIcon.classList.remove('fa-moon');
-        themeIcon.classList.add('fa-sun');
-      }
-
-      // Theme toggle
-      themeToggle.addEventListener('click', () => {
-        document.body.classList.toggle('dark');
-        const isDark = document.body.classList.contains('dark');
-        localStorage.setItem('theme', isDark ? 'dark' : 'light');
-        themeIcon.classList.toggle('fa-moon', !isDark);
-        themeIcon.classList.toggle('fa-sun', isDark);
-      });
-
-      // Auto-scroll to bottom initially
-      scrollToBottom();
-
-      // Observe message container for new messages
-      const observer = new MutationObserver(scrollToBottom);
-      observer.observe(chatMessages, { childList: true });
-
-      function scrollToBottom() {
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-      }
-    });
-
-    // Adjust padding on mobile keyboard open (e.g. iOS)
-    const chatFormContainer = document.querySelector('.chat-form-container');
-
-    window.addEventListener('resize', () => {
-      if (window.innerHeight < 500) {
-        // Keyboard likely open
-        if (chatMessages) {
-          chatMessages.style.paddingBottom = '200px';
-        }
-        window.scrollTo(0, document.body.scrollHeight);
-      } else {
-        if (chatMessages) {
-          chatMessages.style.paddingBottom = '90px';
-        }
-      }
-    });
-  </script>
-
-
-
-
 </body>
 
 </html>
