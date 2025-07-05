@@ -73,10 +73,12 @@
   <script defer src="js/main.js"></script>
 
   <script>
+    let chatMessages;
+
     document.addEventListener('DOMContentLoaded', () => {
       const themeToggle = document.getElementById('theme-toggle');
       const themeIcon = document.getElementById('theme-icon');
-      const chatMessages = document.getElementById('chat-messages');
+      chatMessages = document.getElementById('chat-messages');
 
       // Load saved theme
       if (localStorage.getItem('theme') === 'dark') {
@@ -97,7 +99,7 @@
       // Auto-scroll to bottom initially
       scrollToBottom();
 
-      // Setup observer to auto-scroll on new messages
+      // Observe message container for new messages
       const observer = new MutationObserver(scrollToBottom);
       observer.observe(chatMessages, { childList: true });
 
@@ -106,23 +108,24 @@
       }
     });
 
-
-    // Detect iOS keyboard and adjust view
+    // Adjust padding on mobile keyboard open (e.g. iOS)
     const chatFormContainer = document.querySelector('.chat-form-container');
-    const chatMessages = document.querySelector('.chat-messages');
 
     window.addEventListener('resize', () => {
       if (window.innerHeight < 500) {
         // Keyboard likely open
-        chatMessages.style.paddingBottom = '200px'; // adjust as needed
+        if (chatMessages) {
+          chatMessages.style.paddingBottom = '200px';
+        }
         window.scrollTo(0, document.body.scrollHeight);
       } else {
-        chatMessages.style.paddingBottom = '90px';
+        if (chatMessages) {
+          chatMessages.style.paddingBottom = '90px';
+        }
       }
     });
-
-
   </script>
+
 
 
 
