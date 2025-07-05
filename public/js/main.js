@@ -222,3 +222,47 @@ window.addEventListener('resize', () => {
 window.addEventListener('resize', () => {
   document.body.style.height = window.innerHeight + 'px';
 });
+ function adjustForKeyboard() {
+      const form = document.querySelector('.chat-form-container');
+      if (window.innerHeight < 500) {
+        form.style.position = 'absolute';
+        form.style.bottom = '0';
+      } else {
+        form.style.position = 'fixed';
+        form.style.bottom = '0';
+      }
+    }
+
+    window.addEventListener('resize', adjustForKeyboard);
+    window.addEventListener('load', adjustForKeyboard);
+
+    let initialHeight = window.innerHeight;
+
+    window.addEventListener('resize', () => {
+      const isKeyboard = window.innerHeight < initialHeight;
+      document.body.classList.toggle('keyboard-open', isKeyboard);
+    });
+    // Viewport height fix for mobile and PWA (avoids header jump)
+    function setViewportHeight() {
+      let vh = window.innerHeight * 0.01;
+      document.documentElement.style.setProperty('--vh', `${vh}px`);
+    }
+    window.addEventListener('resize', setViewportHeight);
+    window.addEventListener('load', setViewportHeight);
+
+    // Fix 100vh issue for iOS and Safari
+    function setViewportHeight() {
+      const vh = window.innerHeight * 0.01;
+      document.documentElement.style.setProperty('--vh', `${vh}px`);
+    }
+    window.addEventListener('resize', setViewportHeight);
+    window.addEventListener('orientationchange', setViewportHeight);
+    document.addEventListener('DOMContentLoaded', setViewportHeight);
+
+    // Optional: auto-scroll on focus
+    const input = document.getElementById('msg');
+    input.addEventListener('focus', () => {
+      setTimeout(() => {
+        input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 300);
+    });
