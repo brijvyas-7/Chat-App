@@ -435,3 +435,37 @@ body.dark .reply-box {
   color: #ccc;
   border-left-color: #555;
 }
+.reply-box {
+  background-color: #f1f0f0;
+  border-left: 4px solid #0b93f6;
+  padding: 4px 8px;
+  margin-bottom: 5px;
+  font-size: 0.85em;
+  border-radius: 6px;
+}
+
+body.dark .reply-box {
+  background-color: #2f2f2f;
+  border-left-color: #00bcd4;
+}
+
+.reply-username {
+  font-weight: bold;
+  color: #0b93f6;
+}
+
+body.dark .reply-username {
+  color: #00bcd4;
+}
+
+.reply-text {
+  color: #555;
+  font-size: 0.8em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.dark .reply-text {
+  color: #ccc;
+}

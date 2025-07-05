@@ -116,9 +116,15 @@ function outputMessage({ username: sender, text, time, replyTo }) {
   }
 
   let replyHTML = '';
-  if (replyTo) {
-    replyHTML = `<div class="reply-box"><b>${replyTo.username}:</b> ${replyTo.text}</div>`;
-  }
+ if (replyTo) {
+  replyHTML = `
+    <div class="reply-box">
+      <div class="reply-username">${replyTo.username}</div>
+      <div class="reply-text">${replyTo.text.length > 50 ? replyTo.text.substring(0, 50) + '…' : replyTo.text}</div>
+    </div>
+  `;
+}
+
 
   div.innerHTML = `
     <div class="meta fw-semibold">
