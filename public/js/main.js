@@ -5,7 +5,6 @@ const roomName = document.getElementById('room-name');
 const userList = document.getElementById('users');
 const emojiBtn = document.getElementById('emoji-btn');
 const msgInput = document.getElementById('msg');
-const typingIndicator = document.getElementById('typing-indicator');
 const muteToggle = document.getElementById('mute-toggle');
 const muteIcon = document.getElementById('mute-icon');
 
@@ -56,25 +55,41 @@ socket.on('message', (message) => {
   }
 });
 
-// Typing indicator
+// Typing indicator as chat bubble
+let typingBubble = null;
+
 socket.on('showTyping', ({ username: typer }) => {
-  if (typer !== username) {
-    typingIndicator.style.display = 'block';
-    typingIndicator.innerText = `${typer} is typing...`;
-    clearTimeout(typingIndicator.timeout);
-    typingIndicator.timeout = setTimeout(() => {
-      typingIndicator.style.display = 'none';
-      typingIndicator.innerText = '';
-    }, 1500);
-  }
+  if (typer === username) return;
+
+  if (typingBubble) typingBubble.remove();
+
+  typingBubble = document.createElement('div');
+  typingBubble.classList.add('message', 'typing', 'other');
+  typingBubble.innerHTML = `
+    <div class="meta fw-semibold">${typer}</div>
+    <div class="text"><span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></div>
+  `;
+  chatMessages.appendChild(typingBubble);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+
+  clearTimeout(typingBubble.timeout);
+  typingBubble.timeout = setTimeout(() => {
+    if (typingBubble) {
+      typingBubble.remove();
+      typingBubble = null;
+    }
+  }, 1500);
 });
 
 socket.on('hideTyping', () => {
-  typingIndicator.innerText = '';
-  typingIndicator.style.display = 'none';
+  if (typingBubble) {
+    typingBubble.remove();
+    typingBubble = null;
+  }
 });
 
 // Typing event
+let typingTimeout;
 msgInput.addEventListener('input', () => {
   socket.emit('typing', { username, room });
   clearTimeout(typingTimeout);
@@ -92,8 +107,10 @@ chatForm.addEventListener('submit', (e) => {
   socket.emit('chatMessage', msg);
   msgInput.value = '';
   msgInput.focus();
-  typingIndicator.innerText = '';
-  typingIndicator.style.display = 'none';
+  if (typingBubble) {
+    typingBubble.remove();
+    typingBubble = null;
+  }
 });
 
 // Display message
@@ -162,8 +179,6 @@ picker.on('emoji', emoji => {
   msgInput.value += emoji;
   msgInput.focus();
 });
-
-let typingTimeout;
 
 // ================= Theme Toggle and Scroll ==================
 
