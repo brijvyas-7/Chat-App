@@ -8,6 +8,9 @@ const msgInput = document.getElementById('msg');
 const muteToggle = document.getElementById('mute-toggle');
 const muteIcon = document.getElementById('mute-icon');
 const replyPreview = document.getElementById('reply-preview');
+const replyUser = document.getElementById('reply-user');
+const replyText = document.getElementById('reply-text');
+const cancelReplyBtn = document.getElementById('cancel-reply');
 
 let replyTo = null;
 
@@ -53,7 +56,7 @@ let typingBubble = null;
 socket.on('showTyping', ({ username: typer }) => {
   if (typer === username) return;
 
-  if (typingBubble instanceof Element) if (typingBubble instanceof Element) typingBubble.remove();
+  if (typingBubble instanceof Element) typingBubble.remove();
 
   typingBubble = document.createElement('div');
   typingBubble.classList.add('message', 'typing', 'other');
@@ -64,7 +67,7 @@ socket.on('showTyping', ({ username: typer }) => {
   chatMessages.appendChild(typingBubble);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 
-  clearTimeout(typingBubble.timeout);
+  clearTimeout(typingBubble?.timeout);
   typingBubble.timeout = setTimeout(() => {
     if (typingBubble instanceof Element) typingBubble.remove();
     typingBubble = null;
@@ -72,10 +75,8 @@ socket.on('showTyping', ({ username: typer }) => {
 });
 
 socket.on('hideTyping', () => {
-  if (typingBubble) {
-    if (typingBubble instanceof Element) typingBubble.remove();
-    typingBubble = null;
-  }
+  if (typingBubble instanceof Element) typingBubble.remove();
+  typingBubble = null;
 });
 
 let typingTimeout;
@@ -96,13 +97,10 @@ chatForm.addEventListener('submit', (e) => {
   msgInput.value = '';
   msgInput.focus();
   replyTo = null;
-  replyPreview.innerHTML = '';
   replyPreview.style.display = 'none';
 
-  if (typingBubble) {
-    if (typingBubble instanceof Element) typingBubble.remove();
-    typingBubble = null;
-  }
+  if (typingBubble instanceof Element) typingBubble.remove();
+  typingBubble = null;
 });
 
 function outputMessage({ username: sender, text, time, replyTo }) {
@@ -133,17 +131,18 @@ function outputMessage({ username: sender, text, time, replyTo }) {
   div.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     replyTo = { username: sender, text };
-    replyPreview.innerHTML = `Replying to <b>${sender}</b>: ${text} <span id="cancel-reply">✖</span>`;
+    replyUser.textContent = sender;
+    replyText.textContent = text;
     replyPreview.style.display = 'block';
-    document.getElementById('cancel-reply').onclick = () => {
-      replyTo = null;
-      replyPreview.innerHTML = '';
-      replyPreview.style.display = 'none';
-    };
   });
 
   chatMessages.appendChild(div);
 }
+
+cancelReplyBtn.addEventListener('click', () => {
+  replyTo = null;
+  replyPreview.style.display = 'none';
+});
 
 function outputRoomName(room) {
   if (roomName) roomName.innerText = room;

@@ -20,48 +20,37 @@ app.use(express.static(path.join(__dirname, 'public')));
 const botName = 'ChatApp Bot';
 
 io.on('connection', (socket) => {
-  // When a user joins a room
+  // When user joins room
   socket.on('joinRoom', ({ username, room }) => {
     const user = userJoin(socket.id, username, room);
     socket.join(user.room);
 
-    // Welcome the current user
+    // Welcome current user
     socket.emit('message', formatMessage(botName, 'Welcome to Chat App'));
 
-    // Broadcast to others that user has joined
+    // Broadcast to others
     socket.broadcast.to(user.room).emit(
       'message',
       formatMessage(botName, `${user.username} has joined the chat`)
     );
 
-    // Send updated room and user list
+    // Send updated room and users
     io.to(user.room).emit('roomUsers', {
       room: user.room,
       users: getRoomUsers(user.room),
     });
   });
 
-  // Handle message (normal or with reply)
-  socket.on('chatMessage', (data) => {
+  // Handle incoming message (with optional reply)
+  socket.on('chatMessage', ({ text, replyTo }) => {
     const user = getCurrentUser(socket.id);
-
     if (user) {
-      // If plain text string, treat as normal message
-      const message =
-        typeof data === 'string'
-          ? formatMessage(user.username, data)
-          : {
-              username: user.username,
-              text: data.text,
-              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              replyTo: data.replyTo || null,
-            };
-
-      io.to(user.room).emit('message', message);
+      const msg = formatMessage(user.username, text, replyTo);
+      io.to(user.room).emit('message', msg);
     }
   });
 
-  // Typing event
+  // Typing indicator
   socket.on('typing', () => {
     const user = getCurrentUser(socket.id);
     if (user) {
@@ -76,10 +65,9 @@ io.on('connection', (socket) => {
     }
   });
 
-  // User disconnects
+  // On disconnect
   socket.on('disconnect', () => {
     const user = userLeave(socket.id);
-
     if (user) {
       io.to(user.room).emit(
         'message',
@@ -95,5 +83,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

@@ -1,10 +1,11 @@
 const moment = require('moment-timezone');
 
-function formatMessage(username, text) {
+function formatMessage(username, text, replyTo = null) {
   return {
     username,
     text,
-    time: moment().tz('Asia/Kolkata').format('h:mm a')  // IST time
+    replyTo,  // Include replyTo info
+    time: moment().tz('Asia/Kolkata').format('h:mm a'),  // IST time
   };
 }
 
