@@ -314,3 +314,12 @@ function setVhUnit() {
 }
 window.addEventListener('resize', setVhUnit);
 window.addEventListener('orientationchange', setVhUnit);
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/service-worker.js')
+      .then(reg => console.log('Service Worker registered'))
+      .catch(err => console.error('Service Worker failed', err));
+  });
+}
