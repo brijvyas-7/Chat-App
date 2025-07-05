@@ -105,6 +105,23 @@
         chatMessages.scrollTop = chatMessages.scrollHeight;
       }
     });
+
+
+    // Detect iOS keyboard and adjust view
+    const chatFormContainer = document.querySelector('.chat-form-container');
+    const chatMessages = document.querySelector('.chat-messages');
+
+    window.addEventListener('resize', () => {
+      if (window.innerHeight < 500) {
+        // Keyboard likely open
+        chatMessages.style.paddingBottom = '200px'; // adjust as needed
+        window.scrollTo(0, document.body.scrollHeight);
+      } else {
+        chatMessages.style.paddingBottom = '90px';
+      }
+    });
+
+
   </script>
 
 
