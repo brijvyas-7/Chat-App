@@ -7,16 +7,17 @@ const emojiBtn = document.getElementById('emoji-btn');
 const msgInput = document.getElementById('msg');
 const muteToggle = document.getElementById('mute-toggle');
 const muteIcon = document.getElementById('mute-icon');
+const replyPreview = document.getElementById('reply-preview');
+
+let replyTo = null;
 
 // Parse username and room
 const { username, room } = Qs.parse(location.search, {
   ignoreQueryPrefix: true,
 });
 
-// Setup socket
 const socket = io();
 
-// Mute preference
 let isMuted = localStorage.getItem('muted') === 'true';
 updateMuteIcon();
 
@@ -27,25 +28,17 @@ muteToggle.addEventListener('click', () => {
 });
 
 function updateMuteIcon() {
-  if (isMuted) {
-    muteIcon.classList.remove('fa-bell');
-    muteIcon.classList.add('fa-bell-slash');
-  } else {
-    muteIcon.classList.remove('fa-bell-slash');
-    muteIcon.classList.add('fa-bell');
-  }
+  muteIcon.classList.toggle('fa-bell', !isMuted);
+  muteIcon.classList.toggle('fa-bell-slash', isMuted);
 }
 
-// Join room
 socket.emit('joinRoom', { username, room });
 
-// Update room and users
 socket.on('roomUsers', ({ room, users }) => {
   outputRoomName(room);
   outputUsers(users);
 });
 
-// Message received
 socket.on('message', (message) => {
   outputMessage(message);
   chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -55,7 +48,6 @@ socket.on('message', (message) => {
   }
 });
 
-// Typing indicator as chat bubble
 let typingBubble = null;
 
 socket.on('showTyping', ({ username: typer }) => {
@@ -74,10 +66,8 @@ socket.on('showTyping', ({ username: typer }) => {
 
   clearTimeout(typingBubble.timeout);
   typingBubble.timeout = setTimeout(() => {
-    if (typingBubble) {
-      typingBubble.remove();
-      typingBubble = null;
-    }
+    typingBubble.remove();
+    typingBubble = null;
   }, 1500);
 });
 
@@ -88,7 +78,6 @@ socket.on('hideTyping', () => {
   }
 });
 
-// Typing event
 let typingTimeout;
 msgInput.addEventListener('input', () => {
   socket.emit('typing', { username, room });
@@ -98,23 +87,25 @@ msgInput.addEventListener('input', () => {
   }, 1500);
 });
 
-// Send message
 chatForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const msg = msgInput.value.trim();
   if (!msg) return;
 
-  socket.emit('chatMessage', msg);
+  socket.emit('chatMessage', { text: msg, replyTo });
   msgInput.value = '';
   msgInput.focus();
+  replyTo = null;
+  replyPreview.innerHTML = '';
+  replyPreview.style.display = 'none';
+
   if (typingBubble) {
     typingBubble.remove();
     typingBubble = null;
   }
 });
 
-// Display message
-function outputMessage({ username: sender, text, time }) {
+function outputMessage({ username: sender, text, time, replyTo }) {
   const div = document.createElement('div');
   div.classList.add('message');
 
@@ -126,22 +117,38 @@ function outputMessage({ username: sender, text, time }) {
     div.classList.add('other');
   }
 
+  let replyHTML = '';
+  if (replyTo) {
+    replyHTML = `<div class="reply-box"><b>${replyTo.username}:</b> ${replyTo.text}</div>`;
+  }
+
   div.innerHTML = `
     <div class="meta fw-semibold">
       ${sender} <span class="text-muted small ms-2">${time}</span>
     </div>
+    ${replyHTML}
     <div class="text">${text}</div>
   `;
+
+  div.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    replyTo = { username: sender, text };
+    replyPreview.innerHTML = `Replying to <b>${sender}</b>: ${text} <span id="cancel-reply">✖</span>`;
+    replyPreview.style.display = 'block';
+    document.getElementById('cancel-reply').onclick = () => {
+      replyTo = null;
+      replyPreview.innerHTML = '';
+      replyPreview.style.display = 'none';
+    };
+  });
 
   chatMessages.appendChild(div);
 }
 
-// Output room name
 function outputRoomName(room) {
   if (roomName) roomName.innerText = room;
 }
 
-// List users
 function outputUsers(users) {
   if (!userList) return;
   userList.innerHTML = '';
@@ -153,7 +160,6 @@ function outputUsers(users) {
   });
 }
 
-// Leave chat
 const leaveBtn = document.getElementById('leave-btn');
 if (leaveBtn) {
   leaveBtn.addEventListener('click', () => {
@@ -163,7 +169,6 @@ if (leaveBtn) {
   });
 }
 
-// Emoji picker
 const picker = new EmojiButton({
   position: 'top-start',
   theme: document.body.classList.contains('dark') ? 'dark' : 'light',
@@ -179,8 +184,6 @@ picker.on('emoji', emoji => {
   msgInput.value += emoji;
   msgInput.focus();
 });
-
-// ================= Theme Toggle and Scroll ==================
 
 document.addEventListener('DOMContentLoaded', () => {
   const themeToggle = document.getElementById('theme-toggle');
@@ -201,7 +204,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   scrollToBottom();
-
   const observer = new MutationObserver(scrollToBottom);
   observer.observe(chatMessages, { childList: true });
 
@@ -210,7 +212,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// ================= Mobile Keyboard Fix ==================
 const chatFormContainer = document.querySelector('.chat-form-container');
 
 window.addEventListener('resize', () => {
@@ -263,3 +264,11 @@ input.addEventListener('focus', () => {
     input.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, 300);
 });
+
+setVhUnit();
+function setVhUnit() {
+  const vh = window.innerHeight * 0.01;
+  document.documentElement.style.setProperty('--vh', `${vh}px`);
+}
+window.addEventListener('resize', setVhUnit);
+window.addEventListener('orientationchange', setVhUnit);

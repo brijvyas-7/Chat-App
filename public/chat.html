@@ -9,11 +9,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 
-
   <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/6596/6596121.png" />
   <title>Chat App 💬</title>
-
-
 
   <!-- Font Awesome -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.12.1/css/all.min.css"
@@ -25,7 +22,7 @@
   <!-- Custom CSS -->
   <link rel="stylesheet" href="css/style.css" />
 
-
+  
 </head>
 
 <body>
@@ -41,9 +38,6 @@
           <i id="mute-icon" class="fas fa-bell-slash"></i>
         </button>
       </div>
-
-
-
     </header>
 
     <main class="chat-main">
@@ -55,43 +49,34 @@
       </div>
 
       <div class="chat-messages" id="chat-messages">
-
         <!-- Messages will appear here -->
       </div>
     </main>
-    <div id="typing-indicator typing-bubble" ></div>
+
+    <div id="typing-indicator" class="typing-bubble"></div>
+
+    <!-- 🆕 Reply Preview Container -->
+    <div id="reply-preview" class="reply-preview" style="display: none;">
+      <strong id="reply-user"></strong>
+      <div id="reply-text" class="text-muted small"></div>
+      <button id="cancel-reply" title="Cancel">✖️</button>
+    </div>
+
     <div class="chat-form-container">
       <form id="chat-form">
         <button type="button" id="emoji-btn" class="btn" title="Emoji">😊</button>
         <input id="msg" type="text" placeholder="Enter Message" required autocomplete="off" />
         <button class="btn" type="submit"><i class="fas fa-paper-plane"></i> Send</button>
       </form>
-
     </div>
   </div>
 
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/qs/6.9.2/qs.min.js"></script>
-  <!-- Working emoji-button version -->
   <script src="https://cdn.jsdelivr.net/npm/@joeattardi/emoji-button@3.1.1/dist/index.min.js"></script>
-
   <script defer src="/socket.io/socket.io.js"></script>
   <script defer src="js/main.js"></script>
 
-  <script>
-    function setVhUnit() {
-      const vh = window.innerHeight * 0.01;
-      document.documentElement.style.setProperty('--vh', `${vh}px`);
-    }
-
-    // Set on page load
-    setVhUnit();
-
-    // Update on resize/orientation
-    window.addEventListener('resize', setVhUnit);
-    window.addEventListener('orientationchange', setVhUnit);
-
-  </script>
-
+ 
 </body>
 
 </html>
