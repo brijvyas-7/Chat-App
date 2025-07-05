@@ -138,6 +138,34 @@ function outputMessage({ username: sender, text, time, replyTo }) {
 
   chatMessages.appendChild(div);
 }
+// Add slide-to-reply support
+let startX = 0;
+let currentX = 0;
+let threshold = 60; // px to detect swipe
+let swiping = false;
+
+div.addEventListener('touchstart', (e) => {
+  startX = e.touches[0].clientX;
+});
+
+div.addEventListener('touchmove', (e) => {
+  currentX = e.touches[0].clientX;
+  if (currentX - startX > threshold && !swiping) {
+    swiping = true;
+    replyTo = { username: sender, text };
+    replyPreview.innerHTML = `Replying to <b>${sender}</b>: ${text} <span id="cancel-reply">✖</span>`;
+    replyPreview.style.display = 'block';
+    document.getElementById('cancel-reply').onclick = () => {
+      replyTo = null;
+      replyPreview.innerHTML = '';
+      replyPreview.style.display = 'none';
+    };
+  }
+});
+
+div.addEventListener('touchend', () => {
+  swiping = false;
+});
 
 cancelReplyBtn.addEventListener('click', () => {
   replyTo = null;
