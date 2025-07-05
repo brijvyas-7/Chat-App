@@ -219,3 +219,6 @@ window.addEventListener('resize', () => {
     chatMessages.style.paddingBottom = '90px';
   }
 });
+window.addEventListener('resize', () => {
+  document.body.style.height = window.innerHeight + 'px';
+});

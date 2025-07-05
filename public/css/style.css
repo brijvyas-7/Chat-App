@@ -29,6 +29,7 @@ body.dark {
 
 html, body {
   height: 100%;
+  overflow: auto;
 }
 
 body {
@@ -38,7 +39,7 @@ body {
   font-size: 16px;
   background: var(--light-color);
   color: #333;
-  overflow: hidden;
+  overflow: auto;
 }
 
 ul {
@@ -91,7 +92,7 @@ a {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  position: fixed;
+  position: sticky;
   top: 0;
   left: 0;
   right: 0;
