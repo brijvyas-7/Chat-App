@@ -91,8 +91,7 @@
     window.addEventListener('orientationchange', setVhUnit);
 
     const msgInput = document.getElementById('msg');
-    const chatMessages = document.querySelector('.chat-messages');
-
+    
     msgInput.addEventListener('focus', () => {
       setTimeout(() => {
         chatMessages.scrollTop = chatMessages.scrollHeight;
