@@ -53,7 +53,7 @@ let typingBubble = null;
 socket.on('showTyping', ({ username: typer }) => {
   if (typer === username) return;
 
-  if (typingBubble) typingBubble.remove();
+  if (typingBubble instanceof Element) if (typingBubble instanceof Element) typingBubble.remove();
 
   typingBubble = document.createElement('div');
   typingBubble.classList.add('message', 'typing', 'other');
@@ -66,14 +66,14 @@ socket.on('showTyping', ({ username: typer }) => {
 
   clearTimeout(typingBubble.timeout);
   typingBubble.timeout = setTimeout(() => {
-    typingBubble.remove();
+    if (typingBubble instanceof Element) typingBubble.remove();
     typingBubble = null;
   }, 1500);
 });
 
 socket.on('hideTyping', () => {
   if (typingBubble) {
-    typingBubble.remove();
+    if (typingBubble instanceof Element) typingBubble.remove();
     typingBubble = null;
   }
 });
@@ -100,7 +100,7 @@ chatForm.addEventListener('submit', (e) => {
   replyPreview.style.display = 'none';
 
   if (typingBubble) {
-    typingBubble.remove();
+    if (typingBubble instanceof Element) typingBubble.remove();
     typingBubble = null;
   }
 });
