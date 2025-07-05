@@ -1,6 +1,6 @@
 const notificationSound = new Audio('/sounds/notification.mp3');
 const chatForm = document.getElementById('chat-form');
-const chatMessages = document.getElementById('chat-messages');
+chatMessages = document.getElementById('chat-messages');
 const roomName = document.getElementById('room-name');
 const userList = document.getElementById('users');
 const emojiBtn = document.getElementById('emoji-btn');
