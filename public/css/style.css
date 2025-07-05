@@ -194,12 +194,13 @@ a {
   padding: 8px;
   background: var(--white);
   border-top: 1px solid #ddd;
-  position: fixed;
+  position: sticky;
   bottom: 0;
   left: 0;
   right: 0;
   z-index: 10;
 }
+
 
 .chat-form-container form {
   display: flex;
@@ -212,12 +213,14 @@ a {
 
 .chat-form-container input[type='text'] {
   flex: 1;
-  padding: 10px 14px;
-  font-size: 16px;
+  padding: 8px 12px;
+  font-size: 14px;
+  height: 38px; /* WhatsApp-like height */
   border: 1px solid #ccc;
   border-radius: var(--radius);
   outline: none;
 }
+
 
 .join-container {
   max-width: 500px;
@@ -266,6 +269,7 @@ a {
   }
 
   .chat-form-container {
+    position: sticky !important;
     padding: 10px;
   }
 }
@@ -298,4 +302,12 @@ body.dark .message .meta {
 body.dark .message .meta span {
   color: #999;
 }
+body {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.chat-form-container form {
+  padding: 4px 8px;
+}
+
 
