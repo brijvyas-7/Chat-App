@@ -291,3 +291,20 @@ body.dark .message .meta {
     padding: 2px 8px;
   }
 }
+.typing-bubble {
+  margin: -10px 15px 10px auto;
+  max-width: 70%;
+  padding: 10px 14px;
+  background: #f1f0f0;
+  border-radius: 18px 18px 0 18px;
+  font-size: 14px;
+  font-style: italic;
+  color: #666;
+  display: none;
+  animation: fadeIn 0.3s ease;
+}
+
+body.dark .typing-bubble {
+  background: #2d2d2d;
+  color: #ccc;
+}

@@ -51,7 +51,6 @@ socket.on('message', (message) => {
   outputMessage(message);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 
-  // Play notification if not muted and not own message
   if (message.username !== username && message.username !== 'ChatApp Bot' && !isMuted) {
     notificationSound.play();
   }
@@ -60,17 +59,28 @@ socket.on('message', (message) => {
 // Typing indicator
 socket.on('showTyping', ({ username: typer }) => {
   if (typer !== username) {
+    typingIndicator.style.display = 'block';
     typingIndicator.innerText = `${typer} is typing...`;
     clearTimeout(typingIndicator.timeout);
     typingIndicator.timeout = setTimeout(() => {
+      typingIndicator.style.display = 'none';
       typingIndicator.innerText = '';
     }, 1500);
   }
 });
 
+socket.on('hideTyping', () => {
+  typingIndicator.innerText = '';
+  typingIndicator.style.display = 'none';
+});
+
 // Typing event
 msgInput.addEventListener('input', () => {
   socket.emit('typing', { username, room });
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(() => {
+    socket.emit('stopTyping');
+  }, 1500);
 });
 
 // Send message
@@ -83,6 +93,7 @@ chatForm.addEventListener('submit', (e) => {
   msgInput.value = '';
   msgInput.focus();
   typingIndicator.innerText = '';
+  typingIndicator.style.display = 'none';
 });
 
 // Display message
@@ -154,40 +165,18 @@ picker.on('emoji', emoji => {
 
 let typingTimeout;
 
-msgInput.addEventListener('input', () => {
-  socket.emit('typing');
-
-  clearTimeout(typingTimeout);
-  typingTimeout = setTimeout(() => {
-    socket.emit('stopTyping');
-  }, 1500);
-});
-
-socket.on('showTyping', (data) => {
-  typingIndicator.innerText = `${data.username} is typing...`;
-});
-
-
-socket.on('hideTyping', () => {
-  typingIndicator.innerText = '';
-  typingIndicator.style.display = 'none';
-});
-
 // ================= Theme Toggle and Scroll ==================
 
 document.addEventListener('DOMContentLoaded', () => {
   const themeToggle = document.getElementById('theme-toggle');
   const themeIcon = document.getElementById('theme-icon');
-  const chatMessages = document.getElementById('chat-messages');
 
-  // Load saved theme
   if (localStorage.getItem('theme') === 'dark') {
     document.body.classList.add('dark');
     themeIcon.classList.remove('fa-moon');
     themeIcon.classList.add('fa-sun');
   }
 
-  // Toggle theme
   themeToggle.addEventListener('click', () => {
     document.body.classList.toggle('dark');
     const isDark = document.body.classList.contains('dark');
@@ -196,10 +185,8 @@ document.addEventListener('DOMContentLoaded', () => {
     themeIcon.classList.toggle('fa-sun', isDark);
   });
 
-  // Scroll to bottom on load
   scrollToBottom();
 
-  // Auto scroll on new message
   const observer = new MutationObserver(scrollToBottom);
   observer.observe(chatMessages, { childList: true });
 
@@ -219,50 +206,45 @@ window.addEventListener('resize', () => {
     chatMessages.style.paddingBottom = '90px';
   }
 });
+
 window.addEventListener('resize', () => {
   document.body.style.height = window.innerHeight + 'px';
 });
- function adjustForKeyboard() {
-      const form = document.querySelector('.chat-form-container');
-      if (window.innerHeight < 500) {
-        form.style.position = 'absolute';
-        form.style.bottom = '0';
-      } else {
-        form.style.position = 'fixed';
-        form.style.bottom = '0';
-      }
-    }
 
-    window.addEventListener('resize', adjustForKeyboard);
-    window.addEventListener('load', adjustForKeyboard);
+function adjustForKeyboard() {
+  const form = document.querySelector('.chat-form-container');
+  if (window.innerHeight < 500) {
+    form.style.position = 'absolute';
+    form.style.bottom = '0';
+  } else {
+    form.style.position = 'fixed';
+    form.style.bottom = '0';
+  }
+}
 
-    let initialHeight = window.innerHeight;
+window.addEventListener('resize', adjustForKeyboard);
+window.addEventListener('load', adjustForKeyboard);
 
-    window.addEventListener('resize', () => {
-      const isKeyboard = window.innerHeight < initialHeight;
-      document.body.classList.toggle('keyboard-open', isKeyboard);
-    });
-    // Viewport height fix for mobile and PWA (avoids header jump)
-    function setViewportHeight() {
-      let vh = window.innerHeight * 0.01;
-      document.documentElement.style.setProperty('--vh', `${vh}px`);
-    }
-    window.addEventListener('resize', setViewportHeight);
-    window.addEventListener('load', setViewportHeight);
+let initialHeight = window.innerHeight;
 
-    // Fix 100vh issue for iOS and Safari
-    function setViewportHeight() {
-      const vh = window.innerHeight * 0.01;
-      document.documentElement.style.setProperty('--vh', `${vh}px`);
-    }
-    window.addEventListener('resize', setViewportHeight);
-    window.addEventListener('orientationchange', setViewportHeight);
-    document.addEventListener('DOMContentLoaded', setViewportHeight);
+window.addEventListener('resize', () => {
+  const isKeyboard = window.innerHeight < initialHeight;
+  document.body.classList.toggle('keyboard-open', isKeyboard);
+});
 
-    // Optional: auto-scroll on focus
-    const input = document.getElementById('msg');
-    input.addEventListener('focus', () => {
-      setTimeout(() => {
-        input.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 300);
-    });
+function setViewportHeight() {
+  const vh = window.innerHeight * 0.01;
+  document.documentElement.style.setProperty('--vh', `${vh}px`);
+}
+
+window.addEventListener('resize', setViewportHeight);
+window.addEventListener('load', setViewportHeight);
+window.addEventListener('orientationchange', setViewportHeight);
+document.addEventListener('DOMContentLoaded', setViewportHeight);
+
+const input = document.getElementById('msg');
+input.addEventListener('focus', () => {
+  setTimeout(() => {
+    input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 300);
+});
