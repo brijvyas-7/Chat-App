@@ -19,37 +19,45 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const botName = 'ChatApp Bot';
 
-// Run when client connects
 io.on('connection', (socket) => {
+  // When a user joins a room
   socket.on('joinRoom', ({ username, room }) => {
     const user = userJoin(socket.id, username, room);
-
     socket.join(user.room);
 
-    // Welcome current user
+    // Welcome the current user
     socket.emit('message', formatMessage(botName, 'Welcome to Android Messaging Chat App'));
 
-    // Broadcast when a user connects
-    socket.broadcast
-      .to(user.room)
-      .emit(
-        'message',
-        formatMessage(botName, `${user.username} has joined the chat`)
-      );
+    // Broadcast to others that user has joined
+    socket.broadcast.to(user.room).emit(
+      'message',
+      formatMessage(botName, `${user.username} has joined the chat`)
+    );
 
-    // Send users and room info
+    // Send updated room and user list
     io.to(user.room).emit('roomUsers', {
       room: user.room,
       users: getRoomUsers(user.room),
     });
   });
 
-  // Listen for chatMessage
-  socket.on('chatMessage', (msg) => {
+  // Handle message (normal or with reply)
+  socket.on('chatMessage', (data) => {
     const user = getCurrentUser(socket.id);
 
     if (user) {
-      io.to(user.room).emit('message', formatMessage(user.username, msg));
+      // If plain text string, treat as normal message
+      const message =
+        typeof data === 'string'
+          ? formatMessage(user.username, data)
+          : {
+              username: user.username,
+              text: data.text,
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              replyTo: data.replyTo || null,
+            };
+
+      io.to(user.room).emit('message', message);
     }
   });
 
@@ -68,7 +76,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Runs when client disconnects
+  // User disconnects
   socket.on('disconnect', () => {
     const user = userLeave(socket.id);
 
@@ -78,7 +86,6 @@ io.on('connection', (socket) => {
         formatMessage(botName, `${user.username} has left the chat`)
       );
 
-      // Send users and room info
       io.to(user.room).emit('roomUsers', {
         room: user.room,
         users: getRoomUsers(user.room),
