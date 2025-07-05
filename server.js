@@ -57,7 +57,7 @@ io.on('connection', (socket) => {
   socket.on('typing', () => {
     const user = getCurrentUser(socket.id);
     if (user) {
-      socket.broadcast.to(user.room).emit('showTyping', { username: user.username });
+      socket.broadcast.to(user.room).emit('showTyping', user.username);
     }
   });
 

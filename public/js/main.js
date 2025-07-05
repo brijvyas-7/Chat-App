@@ -163,10 +163,10 @@ msgInput.addEventListener('input', () => {
   }, 1500);
 });
 
-socket.on('showTyping', (username) => {
-  typingIndicator.innerText = `${username} is typing...`;
-  typingIndicator.style.display = 'block';
+socket.on('showTyping', (data) => {
+  typingIndicator.innerText = `${data.username} is typing...`;
 });
+
 
 socket.on('hideTyping', () => {
   typingIndicator.innerText = '';
