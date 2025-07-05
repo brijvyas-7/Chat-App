@@ -5,6 +5,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
   <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/6596/6596121.png" />
   <title>Chat App 💬</title>
 
@@ -72,28 +75,35 @@
   <script defer src="/socket.io/socket.io.js"></script>
   <script defer src="js/main.js"></script>
   <script>
-  function adjustForKeyboard() {
-    const form = document.querySelector('.chat-form-container');
-    if (window.innerHeight < 500) {
-      form.style.position = 'absolute';
-      form.style.bottom = '0';
-    } else {
-      form.style.position = 'fixed';
-      form.style.bottom = '0';
+    function adjustForKeyboard() {
+      const form = document.querySelector('.chat-form-container');
+      if (window.innerHeight < 500) {
+        form.style.position = 'absolute';
+        form.style.bottom = '0';
+      } else {
+        form.style.position = 'fixed';
+        form.style.bottom = '0';
+      }
     }
-  }
 
-  window.addEventListener('resize', adjustForKeyboard);
-  window.addEventListener('load', adjustForKeyboard);
+    window.addEventListener('resize', adjustForKeyboard);
+    window.addEventListener('load', adjustForKeyboard);
 
-  let initialHeight = window.innerHeight;
+    let initialHeight = window.innerHeight;
 
-window.addEventListener('resize', () => {
-  const isKeyboard = window.innerHeight < initialHeight;
-  document.body.classList.toggle('keyboard-open', isKeyboard);
-});
+    window.addEventListener('resize', () => {
+      const isKeyboard = window.innerHeight < initialHeight;
+      document.body.classList.toggle('keyboard-open', isKeyboard);
+    });
+    // Viewport height fix for mobile and PWA (avoids header jump)
+    function setViewportHeight() {
+      let vh = window.innerHeight * 0.01;
+      document.documentElement.style.setProperty('--vh', `${vh}px`);
+    }
+    window.addEventListener('resize', setViewportHeight);
+    window.addEventListener('load', setViewportHeight);
 
-</script>
+  </script>
 
 </body>
 
