@@ -19,8 +19,10 @@
 html, body {
   height: 100%;
   font-family: 'Poppins', sans-serif;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
+
 
 body {
   background: var(--light-color);
@@ -129,7 +131,7 @@ body.dark .join-container {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  position: relative;
+  position: sticky;
   z-index: 10;
   flex-shrink: 0;
   width: 100%;

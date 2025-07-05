@@ -75,6 +75,19 @@
   <script defer src="/socket.io/socket.io.js"></script>
   <script defer src="js/main.js"></script>
  
+<script>
+  function setVhUnit() {
+    const vh = window.innerHeight * 0.01;
+    document.documentElement.style.setProperty('--vh', `${vh}px`);
+  }
+
+  // Set on page load
+  setVhUnit();
+
+  // Update on resize/orientation
+  window.addEventListener('resize', setVhUnit);
+  window.addEventListener('orientationchange', setVhUnit);
+</script>
 
 </body>
 
