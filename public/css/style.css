@@ -27,10 +27,13 @@ body.dark {
   padding: 0;
 }
 
-html, body {
+html,
+body {
   height: 100%;
-  overflow: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
+
 
 body {
   display: flex;
@@ -76,13 +79,11 @@ a {
 .chat-container {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
-  width: 100vw;
-  margin: 0 auto;
+  min-height: 100vh;
+  width: 100%;
   background: var(--white);
-  border-radius: 0;
-  box-shadow: none;
 }
+
 
 .chat-header {
   background: var(--dark-color-a);
@@ -197,10 +198,9 @@ a {
   border-top: 1px solid #ddd;
   position: sticky;
   bottom: 0;
-  left: 0;
-  right: 0;
   z-index: 10;
 }
+
 
 
 .chat-form-container form {
@@ -216,7 +216,8 @@ a {
   flex: 1;
   padding: 8px 12px;
   font-size: 14px;
-  height: 38px; /* WhatsApp-like height */
+  height: 38px;
+  /* WhatsApp-like height */
   border: 1px solid #ccc;
   border-radius: var(--radius);
   outline: none;
@@ -280,11 +281,13 @@ a {
     opacity: 0;
     transform: translateY(10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
   }
 }
+
 /* 🌙 DARK MODE MESSAGE FIXES */
 body.dark .message {
   background: #2d2d2d;
@@ -303,6 +306,7 @@ body.dark .message .meta {
 body.dark .message .meta span {
   color: #999;
 }
+
 body {
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -346,5 +350,6 @@ body {
   padding: 0 14px;
   font-size: 14px;
 }
-
-
+body.keyboard-open .chat-header {
+  position: relative;
+}

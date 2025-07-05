@@ -71,6 +71,30 @@
 
   <script defer src="/socket.io/socket.io.js"></script>
   <script defer src="js/main.js"></script>
+  <script>
+  function adjustForKeyboard() {
+    const form = document.querySelector('.chat-form-container');
+    if (window.innerHeight < 500) {
+      form.style.position = 'absolute';
+      form.style.bottom = '0';
+    } else {
+      form.style.position = 'fixed';
+      form.style.bottom = '0';
+    }
+  }
+
+  window.addEventListener('resize', adjustForKeyboard);
+  window.addEventListener('load', adjustForKeyboard);
+
+  let initialHeight = window.innerHeight;
+
+window.addEventListener('resize', () => {
+  const isKeyboard = window.innerHeight < initialHeight;
+  document.body.classList.toggle('keyboard-open', isKeyboard);
+});
+
+</script>
+
 </body>
 
 </html>
