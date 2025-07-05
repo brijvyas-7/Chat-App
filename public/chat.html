@@ -4,6 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/6596/6596121.png" />
   <title>Chat App 💬</title>
 
@@ -27,14 +28,16 @@
     <header class="chat-header">
       <h1><i class="fas fa-comment-dots"></i> Chat App</h1>
       <a id="leave-btn" class="btn danger"><i class="fas fa-sign-out-alt"></i> Leave</a>
-      <label class="theme-switch">
-        <input type="checkbox" id="darkToggle">
-        <span class="slider"></span>
-      </label>
-      <button id="mute-toggle" class="btn" title="Toggle Sound">
-        <i id="mute-icon" class="fas fa-bell-slash"></i>
-      </button>
-      
+      <div class="controls">
+        <button id="theme-toggle" class="btn" title="Toggle Theme">
+          <i id="theme-icon" class="fas fa-moon"></i>
+        </button>
+        <button id="mute-toggle" class="btn" title="Toggle Sound">
+          <i id="mute-icon" class="fas fa-bell-slash"></i>
+        </button>
+      </div>
+
+
 
     </header>
 
@@ -69,23 +72,42 @@
   <script defer src="/socket.io/socket.io.js"></script>
   <script defer src="js/main.js"></script>
 
-
-
-
   <script>
-    const toggle = document.getElementById('darkToggle');
+    document.addEventListener('DOMContentLoaded', () => {
+      const themeToggle = document.getElementById('theme-toggle');
+      const themeIcon = document.getElementById('theme-icon');
+      const chatMessages = document.getElementById('chat-messages');
 
-    // Load preference
-    if (localStorage.getItem('theme') === 'dark') {
-      document.body.classList.add('dark');
-      toggle.checked = true;
-    }
+      // Load saved theme
+      if (localStorage.getItem('theme') === 'dark') {
+        document.body.classList.add('dark');
+        themeIcon.classList.remove('fa-moon');
+        themeIcon.classList.add('fa-sun');
+      }
 
-    toggle.addEventListener('change', () => {
-      document.body.classList.toggle('dark');
-      localStorage.setItem('theme', document.body.classList.contains('dark') ? 'dark' : 'light');
+      // Theme toggle
+      themeToggle.addEventListener('click', () => {
+        document.body.classList.toggle('dark');
+        const isDark = document.body.classList.contains('dark');
+        localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        themeIcon.classList.toggle('fa-moon', !isDark);
+        themeIcon.classList.toggle('fa-sun', isDark);
+      });
+
+      // Auto-scroll to bottom initially
+      scrollToBottom();
+
+      // Setup observer to auto-scroll on new messages
+      const observer = new MutationObserver(scrollToBottom);
+      observer.observe(chatMessages, { childList: true });
+
+      function scrollToBottom() {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
     });
   </script>
+
+
 
 </body>
 

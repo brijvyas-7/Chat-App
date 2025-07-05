@@ -7,7 +7,7 @@ const {
   userJoin,
   getCurrentUser,
   userLeave,
-  getRoomUsers
+  getRoomUsers,
 } = require('./utils/users');
 
 const app = express();
@@ -20,7 +20,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 const botName = 'ChatApp Bot';
 
 // Run when client connects
-io.on('connection', socket => {
+io.on('connection', (socket) => {
   socket.on('joinRoom', ({ username, room }) => {
     const user = userJoin(socket.id, username, room);
 
@@ -40,15 +40,32 @@ io.on('connection', socket => {
     // Send users and room info
     io.to(user.room).emit('roomUsers', {
       room: user.room,
-      users: getRoomUsers(user.room)
+      users: getRoomUsers(user.room),
     });
   });
 
   // Listen for chatMessage
-  socket.on('chatMessage', msg => {
+  socket.on('chatMessage', (msg) => {
     const user = getCurrentUser(socket.id);
 
-    io.to(user.room).emit('message', formatMessage(user.username, msg));
+    if (user) {
+      io.to(user.room).emit('message', formatMessage(user.username, msg));
+    }
+  });
+
+  // Typing event
+  socket.on('typing', () => {
+    const user = getCurrentUser(socket.id);
+    if (user) {
+      socket.broadcast.to(user.room).emit('showTyping', { username: user.username });
+    }
+  });
+
+  socket.on('stopTyping', () => {
+    const user = getCurrentUser(socket.id);
+    if (user) {
+      socket.broadcast.to(user.room).emit('hideTyping');
+    }
   });
 
   // Runs when client disconnects
@@ -64,7 +81,7 @@ io.on('connection', socket => {
       // Send users and room info
       io.to(user.room).emit('roomUsers', {
         room: user.room,
-        users: getRoomUsers(user.room)
+        users: getRoomUsers(user.room),
       });
     }
   });

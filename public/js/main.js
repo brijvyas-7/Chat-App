@@ -151,3 +151,25 @@ picker.on('emoji', emoji => {
   msgInput.value += emoji;
   msgInput.focus();
 });
+
+let typingTimeout;
+
+msgInput.addEventListener('input', () => {
+  socket.emit('typing');
+
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(() => {
+    socket.emit('stopTyping');
+  }, 1500);
+});
+
+socket.on('showTyping', (username) => {
+  typingIndicator.innerText = `${username} is typing...`;
+  typingIndicator.style.display = 'block';
+});
+
+socket.on('hideTyping', () => {
+  typingIndicator.innerText = '';
+  typingIndicator.style.display = 'none';
+});
+
