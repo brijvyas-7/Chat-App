@@ -7,6 +7,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+
 
   <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/6596/6596121.png" />
   <title>Chat App 💬</title>
@@ -74,20 +76,31 @@
 
   <script defer src="/socket.io/socket.io.js"></script>
   <script defer src="js/main.js"></script>
- 
-<script>
-  function setVhUnit() {
-    const vh = window.innerHeight * 0.01;
-    document.documentElement.style.setProperty('--vh', `${vh}px`);
-  }
 
-  // Set on page load
-  setVhUnit();
+  <script>
+    function setVhUnit() {
+      const vh = window.innerHeight * 0.01;
+      document.documentElement.style.setProperty('--vh', `${vh}px`);
+    }
 
-  // Update on resize/orientation
-  window.addEventListener('resize', setVhUnit);
-  window.addEventListener('orientationchange', setVhUnit);
-</script>
+    // Set on page load
+    setVhUnit();
+
+    // Update on resize/orientation
+    window.addEventListener('resize', setVhUnit);
+    window.addEventListener('orientationchange', setVhUnit);
+
+    const msgInput = document.getElementById('msg');
+    const chatMessages = document.querySelector('.chat-messages');
+
+    msgInput.addEventListener('focus', () => {
+      setTimeout(() => {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }, 300);
+    });
+
+
+  </script>
 
 </body>
 
