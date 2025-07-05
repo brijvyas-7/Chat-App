@@ -90,15 +90,6 @@
     window.addEventListener('resize', setVhUnit);
     window.addEventListener('orientationchange', setVhUnit);
 
-    const msgInput = document.getElementById('msg');
-    
-    msgInput.addEventListener('focus', () => {
-      setTimeout(() => {
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-      }, 300);
-    });
-
-
   </script>
 
 </body>
