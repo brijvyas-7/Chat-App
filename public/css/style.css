@@ -329,6 +329,7 @@ body.dark .chat-form-container input[type='text'] {
     opacity: 0;
     transform: translateY(10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -390,11 +391,13 @@ body.dark .typing-bubble {
 }
 
 @keyframes blink {
+
   0%,
   80%,
   100% {
     opacity: 0.2;
   }
+
   40% {
     opacity: 1;
   }
@@ -435,6 +438,7 @@ body.dark .reply-box {
   color: #ccc;
   border-left-color: #555;
 }
+
 .reply-box {
   background-color: #f1f0f0;
   border-left: 4px solid #0b93f6;
@@ -468,4 +472,62 @@ body.dark .reply-username {
 
 body.dark .reply-text {
   color: #ccc;
+}
+
+.message.has-reply {
+  border-left: 3px solid #f9004d;
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+.reply-tag {
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.reply-preview {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  width: 100%;
+  background-color: #f1f1f1;
+  border-left: 4px solid #2196f3;
+  padding: 5px 10px;
+  font-size: 0.9rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-radius: 4px 4px 0 0;
+  z-index: 2;
+}
+
+.reply-preview .cancel-reply {
+  background: none;
+  border: none;
+  font-size: 1rem;
+  color: #555;
+  cursor: pointer;
+  margin-left: 10px;
+}
+
+.reply-box {
+  background-color: #e6f0ff;
+  border-left: 4px solid #007bff;
+  padding: 4px 8px;
+  margin-bottom: 5px;
+  border-radius: 4px;
+}
+
+.reply-username {
+  font-weight: bold;
+  font-size: 0.85rem;
+  color: #0056b3;
+}
+
+.reply-text {
+  font-size: 0.8rem;
+  color: #333;
+}
+
+.chat-form-container {
+  position: relative;
 }

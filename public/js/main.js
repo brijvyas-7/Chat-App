@@ -13,8 +13,8 @@ const replyText = document.getElementById('reply-text');
 const cancelReplyBtn = document.getElementById('cancel-reply');
 
 let replyTo = null;
+const messageMap = new Map();
 
-// Parse username and room
 const { username, room } = Qs.parse(location.search, {
   ignoreQueryPrefix: true,
 });
@@ -97,15 +97,18 @@ chatForm.addEventListener('submit', (e) => {
   msgInput.value = '';
   msgInput.focus();
   replyTo = null;
+  replyUser.textContent = '';
+  replyText.textContent = '';
   replyPreview.style.display = 'none';
 
   if (typingBubble instanceof Element) typingBubble.remove();
   typingBubble = null;
 });
 
-function outputMessage({ username: sender, text, time, replyTo }) {
+function outputMessage({ id, username: sender, text, time, replyTo }) {
   const div = document.createElement('div');
   div.classList.add('message');
+  div.dataset.id = id;
 
   if (sender === 'ChatApp Bot') {
     div.classList.add('bot');
@@ -116,65 +119,72 @@ function outputMessage({ username: sender, text, time, replyTo }) {
   }
 
   let replyHTML = '';
- if (replyTo) {
-  replyHTML = `
-    <div class="reply-box">
-      <div class="reply-username">${replyTo.username}</div>
-      <div class="reply-text">${replyTo.text.length > 50 ? replyTo.text.substring(0, 50) + '…' : replyTo.text}</div>
-    </div>
-  `;
-}
-
+  if (replyTo) {
+    replyHTML = `
+      <div class="reply-box">
+        <div class="reply-username"><b>${replyTo.username}</b></div>
+        <div class="reply-text">${replyTo.text.length > 50 ? replyTo.text.substring(0, 50) + '…' : replyTo.text}</div>
+      </div>
+    `;
+  }
 
   div.innerHTML = `
+    ${replyHTML}
     <div class="meta fw-semibold">
       ${sender} <span class="text-muted small ms-2">${time}</span>
     </div>
-    ${replyHTML}
     <div class="text">${text}</div>
   `;
 
   div.addEventListener('contextmenu', (e) => {
     e.preventDefault();
-    replyTo = { username: sender, text };
+    replyTo = { username: sender, text, id };
     replyUser.textContent = sender;
     replyText.textContent = text;
     replyPreview.style.display = 'block';
   });
 
+  let startX = 0;
+  let swiping = false;
+
+  div.addEventListener('touchstart', (e) => {
+    startX = e.touches[0].clientX;
+  });
+
+  div.addEventListener('touchmove', (e) => {
+    const currentX = e.touches[0].clientX;
+    if (currentX - startX > 60 && !swiping) {
+      swiping = true;
+      replyTo = { username: sender, text, id };
+      replyUser.textContent = sender;
+      replyText.textContent = text;
+      replyPreview.style.display = 'block';
+    }
+  });
+
+  div.addEventListener('touchend', () => {
+    swiping = false;
+  });
+
   chatMessages.appendChild(div);
-}
-// Add slide-to-reply support
-let startX = 0;
-let currentX = 0;
-let threshold = 60; // px to detect swipe
-let swiping = false;
+  messageMap.set(id, div);
 
-div.addEventListener('touchstart', (e) => {
-  startX = e.touches[0].clientX;
-});
-
-div.addEventListener('touchmove', (e) => {
-  currentX = e.touches[0].clientX;
-  if (currentX - startX > threshold && !swiping) {
-    swiping = true;
-    replyTo = { username: sender, text };
-    replyPreview.innerHTML = `Replying to <b>${sender}</b>: ${text} <span id="cancel-reply">✖</span>`;
-    replyPreview.style.display = 'block';
-    document.getElementById('cancel-reply').onclick = () => {
-      replyTo = null;
-      replyPreview.innerHTML = '';
-      replyPreview.style.display = 'none';
-    };
+  if (replyTo?.id && messageMap.has(replyTo.id)) {
+    const original = messageMap.get(replyTo.id);
+    original.classList.add('has-reply');
+    if (!original.querySelector('.reply-tag')) {
+      const tag = document.createElement('div');
+      tag.className = 'reply-tag text-muted small';
+      tag.innerHTML = `🔁 Replied by <b>${sender}</b>`;
+      original.appendChild(tag);
+    }
   }
-});
-
-div.addEventListener('touchend', () => {
-  swiping = false;
-});
+}
 
 cancelReplyBtn.addEventListener('click', () => {
   replyTo = null;
+  replyUser.textContent = '';
+  replyText.textContent = '';
   replyPreview.style.display = 'none';
 });
 
@@ -298,7 +308,6 @@ input.addEventListener('focus', () => {
   }, 300);
 });
 
-setVhUnit();
 function setVhUnit() {
   const vh = window.innerHeight * 0.01;
   document.documentElement.style.setProperty('--vh', `${vh}px`);
