@@ -3,9 +3,6 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport"
-    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <link rel="manifest" href="/manifest.json">
@@ -15,31 +12,37 @@
   <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/6596/6596121.png" />
   <title>Chat App 💬</title>
 
-  <!-- Font Awesome -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.12.1/css/all.min.css"
-    crossorigin="anonymous" />
-
-  <!-- Google Fonts -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" crossorigin="anonymous" />
   <link href="https://fonts.googleapis.com/css2?family=Poppins&display=swap" rel="stylesheet" />
-
-  <!-- Custom CSS -->
   <link rel="stylesheet" href="css/style.css" />
+
   <style>
-    .header {
+    html, body {
+      height: 100%;
+      overflow-x: hidden;
+    }
+
+    .chat-header {
       position: sticky;
       top: 0;
       z-index: 999;
-      background-color: var(--bg-color);
-      /* or any non-transparent bg */
-      backdrop-filter: blur(10px);
-      /* optional */
+      background-color: var(--dark-color-a);
+      color: white;
+    }
+
+    .highlight-reply {
+      animation: replyHighlight 1s ease-in-out;
+    }
+
+    @keyframes replyHighlight {
+      0% { background-color: yellow; }
+      100% { background-color: inherit; }
     }
   </style>
 </head>
 
 <body>
   <div class="chat-container">
-    <!-- Header -->
     <header class="chat-header">
       <h1><i class="fas fa-comment-dots"></i> Chat App</h1>
       <a id="leave-btn" class="btn danger"><i class="fas fa-sign-out-alt"></i> Leave</a>
@@ -53,9 +56,7 @@
       </div>
     </header>
 
-    <!-- Main Content -->
     <main class="chat-main">
-      <!-- Sidebar -->
       <div class="chat-sidebar">
         <h3><i class="fas fa-door-open"></i> Room:</h3>
         <h2 id="room-name">Loading...</h2>
@@ -63,15 +64,10 @@
         <ul id="users"></ul>
       </div>
 
-      <!-- Messages Area -->
-      <div class="chat-messages" id="chat-messages">
-        <!-- Typing indicator will be appended dynamically -->
-      </div>
+      <div class="chat-messages" id="chat-messages"></div>
     </main>
 
-    <!-- ✅ Input Form & Reply Preview -->
     <div class="chat-form-container">
-      <!-- Reply Preview box above input -->
       <div id="reply-preview" class="reply-preview" style="display: none;">
         <div>
           <strong id="reply-user"></strong>
@@ -88,7 +84,6 @@
     </div>
   </div>
 
-  <!-- Scripts -->
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/qs/6.9.2/qs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@joeattardi/emoji-button@3.1.1/dist/index.min.js"></script>
   <script defer src="/socket.io/socket.io.js"></script>

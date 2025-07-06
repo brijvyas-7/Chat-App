@@ -14,38 +14,38 @@ const app = express();
 const server = http.createServer(app);
 const io = socketio(server);
 
-// Set static folder
+// Serve static files from "public" folder
 app.use(express.static(path.join(__dirname, 'public')));
 
 const botName = 'ChatApp Bot';
 
 io.on('connection', (socket) => {
-  // When user joins room
+  // User joins a room
   socket.on('joinRoom', ({ username, room }) => {
     const user = userJoin(socket.id, username, room);
     socket.join(user.room);
 
-    // Welcome current user
+    // Welcome message to the joining user
     socket.emit('message', formatMessage(botName, 'Welcome to Chat App'));
 
-    // Broadcast to others
+    // Notify others in the room
     socket.broadcast.to(user.room).emit(
       'message',
       formatMessage(botName, `${user.username} has joined the chat`)
     );
 
-    // Send updated room and users
+    // Send updated user list
     io.to(user.room).emit('roomUsers', {
       room: user.room,
       users: getRoomUsers(user.room),
     });
   });
 
-  // Handle incoming message (with optional reply)
+  // Incoming chat message with optional reply
   socket.on('chatMessage', ({ text, replyTo }) => {
     const user = getCurrentUser(socket.id);
-    if (user) {
-      const msg = formatMessage(user.username, text, replyTo);
+    if (user && text.trim()) {
+      const msg = formatMessage(user.username, text, replyTo || null);
       io.to(user.room).emit('message', msg);
     }
   });
@@ -54,7 +54,9 @@ io.on('connection', (socket) => {
   socket.on('typing', () => {
     const user = getCurrentUser(socket.id);
     if (user) {
-      socket.broadcast.to(user.room).emit('showTyping', { username: user.username });
+      socket.broadcast
+        .to(user.room)
+        .emit('showTyping', { username: user.username });
     }
   });
 
@@ -65,7 +67,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // On disconnect
+  // User disconnects
   socket.on('disconnect', () => {
     const user = userLeave(socket.id);
     if (user) {
@@ -74,6 +76,7 @@ io.on('connection', (socket) => {
         formatMessage(botName, `${user.username} has left the chat`)
       );
 
+      // Update room user list
       io.to(user.room).emit('roomUsers', {
         room: user.room,
         users: getRoomUsers(user.room),
@@ -82,5 +85,8 @@ io.on('connection', (socket) => {
   });
 });
 
+// Start the server
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(PORT, () =>
+  console.log(`✅ Server running on http://localhost:${PORT}`)
+);

@@ -95,9 +95,9 @@ chatForm.addEventListener('submit', (e) => {
   if (!msg) return;
 
   socket.emit('chatMessage', {
-  text: msg,
-  replyTo: replyTo ? { ...replyTo } : null // ✅ fixes reply reference loss
-});
+    text: msg,
+    replyTo: replyTo ? { ...replyTo } : null
+  });
 
   msgInput.value = '';
   msgInput.focus();
@@ -109,6 +109,16 @@ chatForm.addEventListener('submit', (e) => {
   if (typingBubble instanceof Element) typingBubble.remove();
   typingBubble = null;
 });
+
+function scrollToAndHighlight(messageId) {
+  const el = messageMap.get(messageId);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.add('highlight-reply');
+  setTimeout(() => {
+    el.classList.remove('highlight-reply');
+  }, 2000);
+}
 
 function outputMessage({ id, username: sender, text, time, replyTo: replyData }) {
   const div = document.createElement('div');
@@ -126,7 +136,7 @@ function outputMessage({ id, username: sender, text, time, replyTo: replyData })
   let replyHTML = '';
   if (replyData) {
     replyHTML = `
-      <div class="reply-box">
+      <div class="reply-box" data-target="${replyData.id}" style="cursor:pointer">
         <div class="reply-username"><b>${replyData.username}</b></div>
         <div class="reply-text">${replyData.text.length > 50 ? replyData.text.substring(0, 50) + '…' : replyData.text}</div>
       </div>
@@ -140,6 +150,10 @@ function outputMessage({ id, username: sender, text, time, replyTo: replyData })
     </div>
     <div class="text">${text}</div>
   `;
+
+  if (replyData) {
+    div.querySelector('.reply-box')?.addEventListener('click', () => scrollToAndHighlight(replyData.id));
+  }
 
   div.addEventListener('contextmenu', (e) => {
     e.preventDefault();
