@@ -94,7 +94,11 @@ chatForm.addEventListener('submit', (e) => {
   const msg = msgInput.value.trim();
   if (!msg) return;
 
-  socket.emit('chatMessage', { text: msg, replyTo });
+  socket.emit('chatMessage', {
+  text: msg,
+  replyTo: replyTo ? { ...replyTo } : null // ✅ fixes reply reference loss
+});
+
   msgInput.value = '';
   msgInput.focus();
   replyTo = null;

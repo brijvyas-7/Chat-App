@@ -6,6 +6,7 @@
   <meta name="viewport"
     content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0d6efd" />
@@ -23,7 +24,17 @@
 
   <!-- Custom CSS -->
   <link rel="stylesheet" href="css/style.css" />
-
+  <style>
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 999;
+      background-color: var(--bg-color);
+      /* or any non-transparent bg */
+      backdrop-filter: blur(10px);
+      /* optional */
+    }
+  </style>
 </head>
 
 <body>
