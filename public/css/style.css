@@ -1,79 +1,122 @@
 :root {
   --vh: 100%;
+  --header-height: 48px;
+  --input-height: 56px;
+  --bubble-radius: 16px;
+  --max-message-width: 80%;
 }
 
-html, body {
-  height: 100%;
-  overflow: hidden;
+/* Base styles */
+html,
+body {
   margin: 0;
   padding: 0;
-  font-family: sans-serif;
-}
-
-body {
+  height: 100dvh;
+  font-family: 'Segoe UI', sans-serif;
+  background: #f8f9fa;
+  color: #212529;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
+/* Dark Mode */
 body.dark {
   background: #111;
   color: #eee;
 }
 
 body.dark .bg-white {
-  background: #222 !important;
+  background: #1e1e1e !important;
   color: #eee;
 }
 
 body.dark .bg-light {
-  background: #1a1a1a !important;
+  background: #2a2a2a !important;
   color: #ccc;
 }
 
-/* Chat Messages Container */
-#chat-messages {
-  flex-grow: 1;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  max-height: calc(var(--vh, 100vh) - 160px); /* adjust if needed based on header+input */
-  padding: 10px 16px;
+body.dark .text-dark {
+  color: #fff !important;
 }
 
-/* Chat Input Sticky Fix */
+body.dark .btn-light {
+  background: #444;
+  border-color: #333;
+  color: #fff;
+}
+
+body.dark #chat-form {
+  background: #2a2a2a;
+}
+
+body.dark #reply-preview {
+  background: #2e2e2e;
+  border-color: #444;
+  color: #fff;
+}
+
+/* Header (sticky like WhatsApp) */
+header.sticky-top {
+  height: var(--header-height);
+  padding: 6px 12px !important;
+  font-size: 1rem;
+  line-height: 1.2;
+  z-index: 999;
+}
+
+
+
+/* Input (chat form) */
 #chat-form {
   position: sticky;
   bottom: 0;
-  background: var(--bs-light);
-  z-index: 10;
+  z-index: 999;
+  padding: 0.5rem;
+  background: var(--bs-light, #f8f9fa);
+  border-top: 1px solid #ccc;
 }
 
-/* Messages */
+/* Message Bubbles */
 .message {
-  max-width: 80%;
+  max-width: var(--max-message-width);
   padding: 10px 14px;
-  border-radius: 16px;
-  background: #f1f1f1;
   margin-bottom: 10px;
-  position: relative;
+  border-radius: var(--bubble-radius);
+  background: #e9ecef;
   word-wrap: break-word;
+  position: relative;
+  font-size: 0.95rem;
 }
 
 .message.you {
-  background: #dcf8c6;
+  background: #d4f8cb;
   margin-left: auto;
 }
 
 .message.other {
+  background: #fff;
   margin-right: auto;
 }
 
-.message .meta {
-  font-size: 12px;
-  font-weight: bold;
-  margin-bottom: 5px;
-  color: #555;
+body.dark .message {
+  background: #333;
 }
 
+body.dark .message.you {
+  background: #0e5133;
+  color: #fff;
+}
+
+/* Meta info */
+.message .meta {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #666;
+}
+
+/* Reply styling inside message */
 .reply-box {
   background: #f1f1f1;
   border-left: 3px solid #0d6efd;
@@ -81,6 +124,7 @@ body.dark .bg-light {
   margin-bottom: 5px;
   border-radius: 4px;
   font-size: 0.85em;
+  cursor: pointer;
 }
 
 .message.has-reply {
@@ -88,25 +132,26 @@ body.dark .bg-light {
 }
 
 .reply-tag {
-  margin-top: 4px;
   font-size: 0.8rem;
   opacity: 0.7;
+  margin-top: 4px;
 }
 
-.highlight-reply {
-  animation: flash-bg 2s ease;
+/* Reply preview above input */
+#reply-preview {
+  border-top: 1px solid #ccc;
+  background: #f1f1f1;
+  padding: 8px 10px;
+  position: relative;
 }
 
-@keyframes flash-bg {
-  from {
-    background-color: #fffbcc;
-  }
-  to {
-    background-color: transparent;
-  }
+.btn-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
 }
 
-/* Typing Dots */
+/* Typing animation */
 .message.typing .text {
   display: flex;
   gap: 4px;
@@ -131,38 +176,62 @@ body.dark .bg-light {
 @keyframes bounce {
   0%, 80%, 100% {
     transform: scale(0);
-  } 
+  }
   40% {
     transform: scale(1);
   }
 }
 
-/* Reply Preview Box */
-#reply-preview {
-  border-top: 1px solid #ddd;
-  background: #e9ecef;
+/* Highlight scroll for replies */
+.highlight-reply {
+  animation: flash-bg 2s ease;
+}
+
+@keyframes flash-bg {
+  from {
+    background-color: #fffbcc;
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+/* Sidebar user list */
+#users {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.list-group-item {
+  background: transparent;
+  border: none;
+  padding: 4px 0;
+  color: inherit;
+}
+
+/* iOS Safari Fixes */
+@supports (-webkit-touch-callout: none) {
+  html {
+    height: -webkit-fill-available;
+  }
+
+  body {
+    height: -webkit-fill-available;
+    min-height: -webkit-fill-available;
+  }
+}
+#chat-messages {
+  flex-grow: 1;
+  overflow-y: auto;
+  padding: 1rem 1rem 6rem;
+  scroll-padding-bottom: 6rem;
+  -webkit-overflow-scrolling: touch;
+  max-height: 100%;
   position: relative;
 }
-
-body.dark #reply-preview {
-  background: #2a2a2a;
-  color: #fff;
-  border-color: #444;
-}
-
-.btn-close {
-  position: absolute;
-  right: 8px;
-  top: 8px;
-}
-:root {
-  --vh: 100%;
-}
-
-html, body {
+html,
+body {
   height: 100%;
-  margin: 0;
-  padding: 0;
   overflow: hidden;
 }
 
@@ -171,20 +240,3 @@ body {
   flex-direction: column;
 }
 
-/* Chat message area takes full height minus input box */
-#chat-messages {
-  flex-grow: 1;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  padding: 10px 16px;
-  padding-bottom: 80px; /* space for input box */
-  scroll-behavior: smooth;
-  scroll-padding-bottom: 100px;
-}
-#chat-form {
-  position: sticky;
-  bottom: 0;
-  background: #f8f9fa; /* or use Bootstrap light var */
-  z-index: 99;
-  padding-top: 8px;
-}

@@ -1,12 +1,12 @@
-// main.js — Fully Patched with Reply, Scroll, Typing, Notification, and Emoji Fixes
+// main.js — Clean, Fully Working Version
 
-const pendingReplies = new Map();
 const notificationSound = new Audio('/sounds/notification.mp3');
+const socket = io();
+
 const chatForm = document.getElementById('chat-form');
 const chatMessages = document.getElementById('chat-messages');
 const roomName = document.getElementById('room-name');
 const userList = document.getElementById('users');
-const emojiBtn = document.getElementById('emoji-btn');
 const msgInput = document.getElementById('msg');
 const muteToggle = document.getElementById('mute-toggle');
 const muteIcon = document.getElementById('mute-icon');
@@ -14,83 +14,83 @@ const replyPreview = document.getElementById('reply-preview');
 const replyUser = document.getElementById('reply-user');
 const replyText = document.getElementById('reply-text');
 const cancelReplyBtn = document.getElementById('cancel-reply');
-
-let replyTo = null;
-const messageMap = new Map();
+const themeToggle = document.getElementById('theme-toggle');
+const themeIcon = document.getElementById('theme-icon');
 
 const { username, room } = Qs.parse(location.search, {
   ignoreQueryPrefix: true,
 });
 
-const socket = io();
-
 let isMuted = localStorage.getItem('muted') === 'true';
+let isDark = localStorage.getItem('theme') === 'dark';
+let replyTo = null;
+const messageMap = new Map();
+
+// ========== INIT UI SETTINGS ==========
+if (isDark) {
+  document.body.classList.add('dark');
+  themeIcon.classList.replace('fa-moon', 'fa-sun');
+}
 updateMuteIcon();
 
-muteToggle.addEventListener('click', () => {
+function updateMuteIcon() {
+  muteIcon.classList.toggle('fa-bell-slash', isMuted);
+  muteIcon.classList.toggle('fa-bell', !isMuted);
+}
+
+// ========== EVENT: Toggle Mute ==========
+muteToggle?.addEventListener('click', () => {
   isMuted = !isMuted;
   localStorage.setItem('muted', isMuted);
   updateMuteIcon();
 });
 
-function updateMuteIcon() {
-  muteIcon.classList.toggle('fa-bell', !isMuted);
-  muteIcon.classList.toggle('fa-bell-slash', isMuted);
-}
+// ========== EVENT: Toggle Theme ==========
+themeToggle?.addEventListener('click', () => {
+  document.body.classList.toggle('dark');
+  isDark = document.body.classList.contains('dark');
+  localStorage.setItem('theme', isDark ? 'dark' : 'light');
+  themeIcon.classList.replace(isDark ? 'fa-moon' : 'fa-sun', isDark ? 'fa-sun' : 'fa-moon');
+});
 
+// ========== SOCKET EVENTS ==========
 socket.emit('joinRoom', { username, room });
 
 socket.on('roomUsers', ({ room, users }) => {
-  outputRoomName(room);
-  outputUsers(users);
+  roomName.textContent = room;
+  userList.innerHTML = users.map(u => `<li>${u.username}</li>`).join('');
 });
 
 socket.on('message', (message) => {
   outputMessage(message);
-  scrollToBottom();
 
-  if (message.username !== username && message.username !== 'ChatApp Bot' && !isMuted) {
+  setTimeout(() => autoScroll(), 50);
+
+  if (
+    message.username !== username &&
+    message.username !== 'ChatApp Bot' &&
+    !isMuted
+  ) {
     notificationSound.play();
   }
 });
 
-let typingBubble = null;
-
 socket.on('showTyping', ({ username: typer }) => {
   if (typer === username) return;
-
-  if (typingBubble instanceof Element) typingBubble.remove();
-
-  typingBubble = document.createElement('div');
-  typingBubble.classList.add('message', 'typing', 'other');
-  typingBubble.innerHTML = `
-    <div class="meta fw-semibold">${typer}</div>
-    <div class="text"><span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></div>
-  `;
-  chatMessages.appendChild(typingBubble);
-  scrollToBottom();
-
-  clearTimeout(typingBubble?.timeout);
-  typingBubble.timeout = setTimeout(() => {
-    if (typingBubble instanceof Element) typingBubble.remove();
-    typingBubble = null;
-  }, 1500);
+  showTypingBubble(typer);
 });
 
-socket.on('hideTyping', () => {
-  if (typingBubble instanceof Element) typingBubble.remove();
-  typingBubble = null;
-});
+socket.on('hideTyping', hideTypingBubble);
 
+// ========== TYPING HANDLING ==========
 let typingTimeout;
 msgInput.addEventListener('input', () => {
-  socket.emit('typing', { username, room });
+  socket.emit('typing');
   clearTimeout(typingTimeout);
-  typingTimeout = setTimeout(() => {
-    socket.emit('stopTyping');
-  }, 1500);
+  typingTimeout = setTimeout(() => socket.emit('stopTyping'), 1200);
 });
 
+// ========== FORM SUBMIT ==========
 chatForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const msg = msgInput.value.trim();
@@ -98,60 +98,35 @@ chatForm.addEventListener('submit', (e) => {
 
   socket.emit('chatMessage', {
     text: msg,
-    replyTo: replyTo ? { ...replyTo } : null
+    replyTo: replyTo ? { ...replyTo } : null,
   });
 
   msgInput.value = '';
   msgInput.focus();
   replyTo = null;
-  replyUser.textContent = '';
-  replyText.textContent = '';
-  replyPreview.style.display = 'none';
-
-  if (typingBubble instanceof Element) typingBubble.remove();
-  typingBubble = null;
+  hideReplyPreview();
 });
 
-function scrollToBottom() {
-  requestAnimationFrame(() => {
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-  });
-}
-
-
-function scrollToAndHighlight(messageId) {
-  const el = messageMap.get(messageId);
-  if (!el) return;
-  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  el.classList.add('highlight-reply');
-  setTimeout(() => {
-    el.classList.remove('highlight-reply');
-  }, 2000);
-}
-
+// ========== UI FUNCTIONS ==========
 function outputMessage({ id, username: sender, text, time, replyTo: replyData }) {
   const div = document.createElement('div');
-  div.classList.add('message');
+  div.classList.add('message', sender === username ? 'you' : sender === 'ChatApp Bot' ? 'bot' : 'other');
   div.dataset.id = id;
-
-  if (sender === 'ChatApp Bot') div.classList.add('bot');
-  else if (sender === username) div.classList.add('you');
-  else div.classList.add('other');
 
   let replyHTML = '';
   if (replyData) {
     replyHTML = `
       <div class="reply-box" data-target="${replyData.id}" style="cursor:pointer">
-        <div class="reply-username"><b>${replyData.username}</b></div>
-        <div class="reply-text">${replyData.text.length > 50 ? replyData.text.substring(0, 50) + '…' : replyData.text}</div>
+        <div class="reply-username fw-bold">${replyData.username}</div>
+        <div class="reply-text small">${replyData.text.substring(0, 60)}${replyData.text.length > 60 ? '…' : ''}</div>
       </div>
     `;
   }
 
   div.innerHTML = `
     ${replyHTML}
-    <div class="meta fw-semibold">
-      ${sender} <span class="text-muted small ms-2">${time}</span>
+    <div class="meta small text-muted">
+      <strong>${sender}</strong> <span class="ms-2">${time}</span>
     </div>
     <div class="text">${text}</div>
   `;
@@ -162,161 +137,82 @@ function outputMessage({ id, username: sender, text, time, replyTo: replyData })
 
   div.addEventListener('contextmenu', (e) => {
     e.preventDefault();
-    replyTo = { username: sender, text, id };
-    replyUser.textContent = sender;
-    replyText.textContent = text;
-    replyPreview.style.display = 'block';
-    setTimeout(() => replyPreview.scrollIntoView({ behavior: 'smooth', block: 'end' }), 200);
+    setReply({ id, username: sender, text });
   });
 
   let startX = 0;
-  let swiping = false;
-
-  div.addEventListener('touchstart', (e) => {
-    startX = e.touches[0].clientX;
-  });
-
-  div.addEventListener('touchmove', (e) => {
-    const currentX = e.touches[0].clientX;
-    if (currentX - startX > 60 && !swiping) {
-      swiping = true;
-      replyTo = { username: sender, text, id };
-      replyUser.textContent = sender;
-      replyText.textContent = text;
-      replyPreview.style.display = 'block';
-      setTimeout(() => replyPreview.scrollIntoView({ behavior: 'smooth', block: 'end' }), 200);
+  div.addEventListener('touchstart', (e) => startX = e.touches[0].clientX);
+  div.addEventListener('touchend', (e) => {
+    if (e.changedTouches[0].clientX - startX > 60) {
+      setReply({ id, username: sender, text });
     }
-  });
-
-  div.addEventListener('touchend', () => {
-    swiping = false;
   });
 
   chatMessages.appendChild(div);
   messageMap.set(id, div);
-
-  if (replyData?.id && messageMap.has(replyData.id)) {
-    const original = messageMap.get(replyData.id);
-    if (!original.querySelector('.reply-tag')) {
-      const tag = document.createElement('div');
-      tag.className = 'reply-tag text-muted small';
-      tag.innerHTML = `🔁 Replied by <b>${sender}</b>`;
-      original.appendChild(tag);
-    }
-    original.classList.add('has-reply');
-  } else if (replyData?.id) {
-    if (!pendingReplies.has(replyData.id)) pendingReplies.set(replyData.id, []);
-    pendingReplies.get(replyData.id).push(sender);
-  }
-
-  if (pendingReplies.has(id)) {
-    const senders = pendingReplies.get(id);
-    for (const s of senders) {
-      const tag = document.createElement('div');
-      tag.className = 'reply-tag text-muted small';
-      tag.innerHTML = `🔁 Replied by <b>${s}</b>`;
-      div.appendChild(tag);
-      div.classList.add('has-reply');
-    }
-    pendingReplies.delete(id);
-  }
-
-  scrollToBottom();
 }
 
-cancelReplyBtn.addEventListener('click', () => {
+function setReply({ id, username, text }) {
+  replyTo = { id, username, text };
+  replyUser.textContent = username;
+  replyText.textContent = text;
+  replyPreview.classList.remove('d-none');
+  replyPreview.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  msgInput.focus();
+}
+
+cancelReplyBtn.addEventListener('click', hideReplyPreview);
+
+function hideReplyPreview() {
   replyTo = null;
   replyUser.textContent = '';
   replyText.textContent = '';
-  replyPreview.style.display = 'none';
-});
-
-function outputRoomName(room) {
-  if (roomName) roomName.innerText = room;
+  replyPreview.classList.add('d-none');
 }
 
-function outputUsers(users) {
-  if (!userList) return;
-  userList.innerHTML = '';
-  users.forEach(({ username }) => {
-    const li = document.createElement('li');
-    li.className = 'list-group-item';
-    li.textContent = username;
-    userList.appendChild(li);
+function scrollToAndHighlight(id) {
+  const el = messageMap.get(id);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.add('highlight-reply');
+  setTimeout(() => el.classList.remove('highlight-reply'), 2000);
+}
+
+function autoScroll() {
+  requestAnimationFrame(() => {
+    const lastMsg = chatMessages.lastElementChild;
+    if (!lastMsg) return;
+    lastMsg.scrollIntoView({ behavior: 'smooth', block: 'end', inline: 'nearest' });
   });
 }
 
-const leaveBtn = document.getElementById('leave-btn');
-if (leaveBtn) {
-  leaveBtn.addEventListener('click', () => {
-    if (confirm('Are you sure you want to leave the chat?')) {
-      window.location.href = '../index.html';
-    }
-  });
+let typingBubble;
+function showTypingBubble(user) {
+  if (typingBubble) typingBubble.remove();
+  typingBubble = document.createElement('div');
+  typingBubble.className = 'message typing other';
+  typingBubble.innerHTML = `
+    <div class="meta small fw-semibold">${user}</div>
+    <div class="text"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+  `;
+  chatMessages.appendChild(typingBubble);
+  autoScroll();
 }
 
-const picker = new EmojiButton({
-  position: 'top-start',
-  theme: document.body.classList.contains('dark') ? 'dark' : 'light',
-});
-
-emojiBtn.addEventListener('click', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  picker.togglePicker(emojiBtn);
-});
-
-picker.on('emoji', emoji => {
-  msgInput.value += emoji;
-  msgInput.focus();
-});
-
-document.addEventListener('DOMContentLoaded', () => {
-  const themeToggle = document.getElementById('theme-toggle');
-  const themeIcon = document.getElementById('theme-icon');
-
-  if (localStorage.getItem('theme') === 'dark') {
-    document.body.classList.add('dark');
-    themeIcon.classList.remove('fa-moon');
-    themeIcon.classList.add('fa-sun');
-  }
-
-  themeToggle.addEventListener('click', () => {
-    document.body.classList.toggle('dark');
-    const isDark = document.body.classList.contains('dark');
-    localStorage.setItem('theme', isDark ? 'dark' : 'light');
-    themeIcon.classList.toggle('fa-moon', !isDark);
-    themeIcon.classList.toggle('fa-sun', isDark);
-  });
-
-  scrollToBottom();
-
-  const observer = new MutationObserver(scrollToBottom);
-  observer.observe(chatMessages, { childList: true, subtree: true });
-});
-
-function setViewportHeight() {
-  const vh = window.innerHeight * 0.01;
-  document.documentElement.style.setProperty('--vh', `${vh}px`);
+function hideTypingBubble() {
+  if (typingBubble) typingBubble.remove();
+  typingBubble = null;
 }
 
-window.addEventListener('resize', setViewportHeight);
-window.addEventListener('load', setViewportHeight);
-window.addEventListener('orientationchange', setViewportHeight);
-document.addEventListener('DOMContentLoaded', setViewportHeight);
-
-const input = document.getElementById('msg');
-input.addEventListener('focus', () => {
-  setTimeout(() => {
-    input.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, 300);
+msgInput.addEventListener('focus', () => {
+  setTimeout(() => msgInput.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
 });
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register('/service-worker.js')
-      .then(reg => console.log('✅ Service Worker registered'))
-      .catch(err => console.error('❌ Service Worker failed', err));
+      .then(() => console.log('✅ Service Worker registered'))
+      .catch(err => console.error('❌ SW registration failed', err));
   });
 }

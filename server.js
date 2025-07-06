@@ -2,6 +2,7 @@ const path = require('path');
 const http = require('http');
 const express = require('express');
 const socketio = require('socket.io');
+const { v4: uuidv4 } = require('uuid'); // ✅ NEW: Unique ID for each message
 const formatMessage = require('./utils/messages');
 const {
   userJoin,
@@ -26,12 +27,18 @@ io.on('connection', (socket) => {
     socket.join(user.room);
 
     // Welcome message to the joining user
-    socket.emit('message', formatMessage(botName, 'Welcome to Chat App'));
+    socket.emit('message', {
+      ...formatMessage(botName, 'Welcome to Chat App'),
+      id: uuidv4() // ✅ Attach ID
+    });
 
     // Notify others in the room
     socket.broadcast.to(user.room).emit(
       'message',
-      formatMessage(botName, `${user.username} has joined the chat`)
+      {
+        ...formatMessage(botName, `${user.username} has joined the chat`),
+        id: uuidv4()
+      }
     );
 
     // Send updated user list
@@ -46,6 +53,7 @@ io.on('connection', (socket) => {
     const user = getCurrentUser(socket.id);
     if (user && text.trim()) {
       const msg = formatMessage(user.username, text, replyTo || null);
+      msg.id = uuidv4(); // ✅ Add unique ID
       io.to(user.room).emit('message', msg);
     }
   });
@@ -73,7 +81,10 @@ io.on('connection', (socket) => {
     if (user) {
       io.to(user.room).emit(
         'message',
-        formatMessage(botName, `${user.username} has left the chat`)
+        {
+          ...formatMessage(botName, `${user.username} has left the chat`),
+          id: uuidv4()
+        }
       );
 
       // Update room user list
