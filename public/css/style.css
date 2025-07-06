@@ -531,3 +531,13 @@ body.dark .reply-text {
 .chat-form-container {
   position: relative;
 }
+header {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  background-color: #fff; /* or your theme background */
+}
+html, body {
+  height: 100%;
+  overflow-x: hidden;
+}

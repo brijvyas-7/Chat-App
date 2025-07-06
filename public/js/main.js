@@ -1,3 +1,4 @@
+const pendingReplies = new Map();
 const notificationSound = new Audio('/sounds/notification.mp3');
 const chatForm = document.getElementById('chat-form');
 const chatMessages = document.getElementById('chat-messages');
@@ -105,7 +106,7 @@ chatForm.addEventListener('submit', (e) => {
   typingBubble = null;
 });
 
-function outputMessage({ id, username: sender, text, time, replyTo }) {
+function outputMessage({ id, username: sender, text, time, replyTo: replyData }) {
   const div = document.createElement('div');
   div.classList.add('message');
   div.dataset.id = id;
@@ -119,11 +120,11 @@ function outputMessage({ id, username: sender, text, time, replyTo }) {
   }
 
   let replyHTML = '';
-  if (replyTo) {
+  if (replyData) {
     replyHTML = `
       <div class="reply-box">
-        <div class="reply-username"><b>${replyTo.username}</b></div>
-        <div class="reply-text">${replyTo.text.length > 50 ? replyTo.text.substring(0, 50) + '…' : replyTo.text}</div>
+        <div class="reply-username"><b>${replyData.username}</b></div>
+        <div class="reply-text">${replyData.text.length > 50 ? replyData.text.substring(0, 50) + '…' : replyData.text}</div>
       </div>
     `;
   }
@@ -169,15 +170,34 @@ function outputMessage({ id, username: sender, text, time, replyTo }) {
   chatMessages.appendChild(div);
   messageMap.set(id, div);
 
-  if (replyTo?.id && messageMap.has(replyTo.id)) {
-    const original = messageMap.get(replyTo.id);
-    original.classList.add('has-reply');
-    if (!original.querySelector('.reply-tag')) {
+  if (replyData?.id) {
+    if (messageMap.has(replyData.id)) {
+      const original = messageMap.get(replyData.id);
+      if (!original.querySelector('.reply-tag')) {
+        const tag = document.createElement('div');
+        tag.className = 'reply-tag text-muted small';
+        tag.innerHTML = `🔁 Replied by <b>${sender}</b>`;
+        original.appendChild(tag);
+      }
+      original.classList.add('has-reply');
+    } else {
+      if (!pendingReplies.has(replyData.id)) {
+        pendingReplies.set(replyData.id, []);
+      }
+      pendingReplies.get(replyData.id).push(sender);
+    }
+  }
+
+  if (pendingReplies.has(id)) {
+    const senders = pendingReplies.get(id);
+    for (const s of senders) {
       const tag = document.createElement('div');
       tag.className = 'reply-tag text-muted small';
-      tag.innerHTML = `🔁 Replied by <b>${sender}</b>`;
-      original.appendChild(tag);
+      tag.innerHTML = `🔁 Replied by <b>${s}</b>`;
+      div.appendChild(tag);
+      div.classList.add('has-reply');
     }
+    pendingReplies.delete(id);
   }
 }
 
@@ -308,18 +328,11 @@ input.addEventListener('focus', () => {
   }, 300);
 });
 
-function setVhUnit() {
-  const vh = window.innerHeight * 0.01;
-  document.documentElement.style.setProperty('--vh', `${vh}px`);
-}
-window.addEventListener('resize', setVhUnit);
-window.addEventListener('orientationchange', setVhUnit);
-
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register('/service-worker.js')
-      .then(reg => console.log('Service Worker registered'))
-      .catch(err => console.error('Service Worker failed', err));
+      .then(reg => console.log('✅ Service Worker registered'))
+      .catch(err => console.error('❌ Service Worker failed', err));
   });
 }
