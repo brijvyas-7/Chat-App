@@ -157,9 +157,14 @@ function setReply({ id, username, text }) {
   replyUser.textContent = username;
   replyText.textContent = text;
   replyPreview.classList.remove('d-none');
-  replyPreview.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  msgInput.focus();
+
+  // Ensure visible
+  setTimeout(() => {
+    replyPreview.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    msgInput.focus(); // Focus input after showing reply box
+  }, 200);
 }
+
 
 cancelReplyBtn.addEventListener('click', hideReplyPreview);
 
@@ -180,11 +185,16 @@ function scrollToAndHighlight(id) {
 
 function autoScroll() {
   requestAnimationFrame(() => {
-    const lastMsg = chatMessages.lastElementChild;
-    if (!lastMsg) return;
-    lastMsg.scrollIntoView({ behavior: 'smooth', block: 'end', inline: 'nearest' });
+    const lastMessage = chatMessages.lastElementChild;
+    if (!lastMessage) return;
+
+    lastMessage.scrollIntoView({
+      behavior: 'smooth',
+      block: 'end'
+    });
   });
 }
+
 
 let typingBubble;
 function showTypingBubble(user) {

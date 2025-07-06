@@ -6,12 +6,11 @@
   --max-message-width: 80%;
 }
 
-/* Base styles */
-html,
-body {
+/* Base */
+html, body {
   margin: 0;
   padding: 0;
-  height: 100dvh;
+  height: 100%;
   font-family: 'Segoe UI', sans-serif;
   background: #f8f9fa;
   color: #212529;
@@ -20,7 +19,6 @@ body {
   flex-direction: column;
 }
 
-/* Dark Mode */
 body.dark {
   background: #111;
   color: #eee;
@@ -50,43 +48,72 @@ body.dark #chat-form {
   background: #2a2a2a;
 }
 
+/* Sticky header */
+header.sticky-top {
+  height: var(--header-height);
+  padding: 6px 12px;
+  font-size: 1rem;
+  z-index: 999;
+  background: inherit;
+}
+
+/* Chat container */
+main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Chat messages area */
+#chat-messages {
+  flex-grow: 1;
+  overflow-y: auto;
+  padding: 1rem 1rem 6rem;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Chat input area */
+#chat-form {
+  position: sticky;
+  bottom: 0;
+  z-index: 999;
+  padding: 0.75rem;
+  background: var(--bs-light, #f8f9fa);
+  border-top: 1px solid #ccc;
+}
+
+/* Reply preview */
+#reply-preview {
+  border-top: 1px solid #ccc;
+  background: #f1f1f1;
+  padding: 8px 10px;
+  position: relative;
+}
+
 body.dark #reply-preview {
   background: #2e2e2e;
   border-color: #444;
   color: #fff;
 }
 
-/* Header (sticky like WhatsApp) */
-header.sticky-top {
-  height: var(--header-height);
-  padding: 6px 12px !important;
-  font-size: 1rem;
-  line-height: 1.2;
-  z-index: 999;
+.btn-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
 }
 
-
-
-/* Input (chat form) */
-#chat-form {
-  position: sticky;
-  bottom: 0;
-  z-index: 999;
-  padding: 0.5rem;
-  background: var(--bs-light, #f8f9fa);
-  border-top: 1px solid #ccc;
-}
-
-/* Message Bubbles */
+/* Messages */
 .message {
   max-width: var(--max-message-width);
   padding: 10px 14px;
   margin-bottom: 10px;
   border-radius: var(--bubble-radius);
   background: #e9ecef;
-  word-wrap: break-word;
-  position: relative;
   font-size: 0.95rem;
+  position: relative;
+  word-wrap: break-word;
 }
 
 .message.you {
@@ -108,15 +135,7 @@ body.dark .message.you {
   color: #fff;
 }
 
-/* Meta info */
-.message .meta {
-  font-size: 12px;
-  font-weight: 600;
-  margin-bottom: 4px;
-  color: #666;
-}
-
-/* Reply styling inside message */
+/* Reply inside messages */
 .reply-box {
   background: #f1f1f1;
   border-left: 3px solid #0d6efd;
@@ -127,31 +146,20 @@ body.dark .message.you {
   cursor: pointer;
 }
 
-.message.has-reply {
-  border-bottom: 1px dashed #ccc;
+.highlight-reply {
+  animation: flash-bg 2s ease;
 }
 
-.reply-tag {
-  font-size: 0.8rem;
-  opacity: 0.7;
-  margin-top: 4px;
+@keyframes flash-bg {
+  from {
+    background-color: #fffbcc;
+  }
+  to {
+    background-color: transparent;
+  }
 }
 
-/* Reply preview above input */
-#reply-preview {
-  border-top: 1px solid #ccc;
-  background: #f1f1f1;
-  padding: 8px 10px;
-  position: relative;
-}
-
-.btn-close {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-}
-
-/* Typing animation */
+/* Typing indicator */
 .message.typing .text {
   display: flex;
   gap: 4px;
@@ -182,61 +190,19 @@ body.dark .message.you {
   }
 }
 
-/* Highlight scroll for replies */
-.highlight-reply {
-  animation: flash-bg 2s ease;
-}
-
-@keyframes flash-bg {
-  from {
-    background-color: #fffbcc;
-  }
-  to {
-    background-color: transparent;
-  }
-}
-
-/* Sidebar user list */
+/* User list */
 #users {
   max-height: 60vh;
   overflow-y: auto;
 }
 
-.list-group-item {
-  background: transparent;
-  border: none;
-  padding: 4px 0;
-  color: inherit;
-}
-
-/* iOS Safari Fixes */
+/* iOS Safari Fix */
 @supports (-webkit-touch-callout: none) {
   html {
     height: -webkit-fill-available;
   }
-
   body {
     height: -webkit-fill-available;
     min-height: -webkit-fill-available;
   }
 }
-#chat-messages {
-  flex-grow: 1;
-  overflow-y: auto;
-  padding: 1rem 1rem 6rem;
-  scroll-padding-bottom: 6rem;
-  -webkit-overflow-scrolling: touch;
-  max-height: 100%;
-  position: relative;
-}
-html,
-body {
-  height: 100%;
-  overflow: hidden;
-}
-
-body {
-  display: flex;
-  flex-direction: column;
-}
-
