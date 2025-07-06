@@ -1,93 +1,74 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <link rel="manifest" href="/manifest.json">
-  <meta name="theme-color" content="#0d6efd" />
-  <link rel="apple-touch-icon" href="/icons/icon-192.png">
-
-  <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/6596/6596121.png" />
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Chat App 💬</title>
 
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" crossorigin="anonymous" />
-  <link href="https://fonts.googleapis.com/css2?family=Poppins&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/style.css" />
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 
-  <style>
-    html, body {
-      height: 100%;
-      overflow-x: hidden;
-    }
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
 
-    .chat-header {
-      position: sticky;
-      top: 0;
-      z-index: 999;
-      background-color: var(--dark-color-a);
-      color: white;
-    }
+  <!-- Emoji Picker (updated version that exists) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@joeattardi/emoji-button@4.6.4/dist/index.min.css" />
 
-    .highlight-reply {
-      animation: replyHighlight 1s ease-in-out;
-    }
-
-    @keyframes replyHighlight {
-      0% { background-color: yellow; }
-      100% { background-color: inherit; }
-    }
-  </style>
+  <link rel="stylesheet" href="css/style.css">
 </head>
 
-<body>
-  <div class="chat-container">
-    <header class="chat-header">
-      <h1><i class="fas fa-comment-dots"></i> Chat App</h1>
-      <a id="leave-btn" class="btn danger"><i class="fas fa-sign-out-alt"></i> Leave</a>
-      <div class="controls">
-        <button id="theme-toggle" class="btn" title="Toggle Theme">
-          <i id="theme-icon" class="fas fa-moon"></i>
-        </button>
-        <button id="mute-toggle" class="btn" title="Toggle Sound">
-          <i id="mute-icon" class="fas fa-bell-slash"></i>
-        </button>
-      </div>
-    </header>
+<body class="bg-light text-dark d-flex flex-column" style="height: 100dvh;">
 
-    <main class="chat-main">
-      <div class="chat-sidebar">
-        <h3><i class="fas fa-door-open"></i> Room:</h3>
-        <h2 id="room-name">Loading...</h2>
-        <h3><i class="fas fa-user-friends"></i> Users</h3>
-        <ul id="users"></ul>
-      </div>
-
-      <div class="chat-messages" id="chat-messages"></div>
-    </main>
-
-    <div class="chat-form-container">
-      <div id="reply-preview" class="reply-preview" style="display: none;">
-        <div>
-          <strong id="reply-user"></strong>
-          <div id="reply-text" class="text-muted small"></div>
-        </div>
-        <button id="cancel-reply" title="Cancel" class="cancel-reply">✖️</button>
-      </div>
-
-      <form id="chat-form">
-        <button type="button" id="emoji-btn" class="btn" title="Emoji">😊</button>
-        <input id="msg" type="text" placeholder="Enter Message" required autocomplete="off" />
-        <button class="btn" type="submit"><i class="fas fa-paper-plane"></i> Send</button>
-      </form>
+  <!-- 🔝 Header -->
+  <header class="bg-primary text-white p-2 sticky-top d-flex justify-content-between align-items-center">
+    <div><i class="fas fa-comment-dots me-2"></i> Chat App</div>
+    <div class="d-flex gap-2">
+      <button id="theme-toggle" class="btn btn-sm btn-light"><i id="theme-icon" class="fas fa-moon"></i></button>
+      <button id="mute-toggle" class="btn btn-sm btn-light"><i id="mute-icon" class="fas fa-bell-slash"></i></button>
+      <a href="../index.html" class="btn btn-sm btn-danger"><i class="fas fa-sign-out-alt"></i></a>
     </div>
-  </div>
+  </header>
 
-  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/qs/6.9.2/qs.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@joeattardi/emoji-button@3.1.1/dist/index.min.js"></script>
-  <script defer src="/socket.io/socket.io.js"></script>
-  <script defer src="js/main.js"></script>
+  <!-- Main Content -->
+  <main class="flex-grow-1 d-flex flex-column overflow-hidden">
+    <div class="row flex-grow-1 w-100 m-0">
+
+      <!-- Sidebar -->
+      <div class="col-md-3 bg-dark text-white p-3 d-none d-md-block">
+        <h5><i class="fas fa-door-open me-2"></i>Room:</h5>
+        <div id="room-name" class="mb-3 text-info">Loading...</div>
+        <h6><i class="fas fa-user-friends me-2"></i>Users</h6>
+        <ul id="users" class="list-unstyled small"></ul>
+      </div>
+
+      <!-- Chat Area -->
+      <div class="col-md-9 col-12 d-flex flex-column p-0 h-100">
+
+        <!-- Chat Messages -->
+        <div id="chat-messages" class="flex-grow-1 overflow-auto p-3 bg-white"></div>
+
+        <!-- Reply Preview -->
+        <div id="reply-preview" class="bg-light border-start border-primary px-3 py-2 small d-none">
+          <span><strong id="reply-user"></strong>: <span id="reply-text"></span></span>
+          <button id="cancel-reply" class="btn-close float-end" aria-label="Close"></button>
+        </div>
+
+        <!-- Input Form -->
+        <form id="chat-form" class="d-flex p-2 border-top bg-light gap-2">
+          <button type="button" id="emoji-btn" class="btn btn-outline-secondary">😊</button>
+          <input id="msg" class="form-control" type="text" placeholder="Enter Message..." autocomplete="off" />
+          <button class="btn btn-primary"><i class="fas fa-paper-plane"></i></button>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <!-- JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qs/6.9.2/qs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@joeattardi/emoji-button@4.6.4/dist/index.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="js/main.js"></script>
 </body>
-
 </html>

@@ -1,3 +1,5 @@
+// main.js — Fully Patched with Reply, Scroll, Typing, Notification, and Emoji Fixes
+
 const pendingReplies = new Map();
 const notificationSound = new Audio('/sounds/notification.mp3');
 const chatForm = document.getElementById('chat-form');
@@ -45,7 +47,7 @@ socket.on('roomUsers', ({ room, users }) => {
 
 socket.on('message', (message) => {
   outputMessage(message);
-  chatMessages.scrollTop = chatMessages.scrollHeight;
+  scrollToBottom();
 
   if (message.username !== username && message.username !== 'ChatApp Bot' && !isMuted) {
     notificationSound.play();
@@ -66,7 +68,7 @@ socket.on('showTyping', ({ username: typer }) => {
     <div class="text"><span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></div>
   `;
   chatMessages.appendChild(typingBubble);
-  chatMessages.scrollTop = chatMessages.scrollHeight;
+  scrollToBottom();
 
   clearTimeout(typingBubble?.timeout);
   typingBubble.timeout = setTimeout(() => {
@@ -110,6 +112,13 @@ chatForm.addEventListener('submit', (e) => {
   typingBubble = null;
 });
 
+function scrollToBottom() {
+  requestAnimationFrame(() => {
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  });
+}
+
+
 function scrollToAndHighlight(messageId) {
   const el = messageMap.get(messageId);
   if (!el) return;
@@ -125,13 +134,9 @@ function outputMessage({ id, username: sender, text, time, replyTo: replyData })
   div.classList.add('message');
   div.dataset.id = id;
 
-  if (sender === 'ChatApp Bot') {
-    div.classList.add('bot');
-  } else if (sender === username) {
-    div.classList.add('you');
-  } else {
-    div.classList.add('other');
-  }
+  if (sender === 'ChatApp Bot') div.classList.add('bot');
+  else if (sender === username) div.classList.add('you');
+  else div.classList.add('other');
 
   let replyHTML = '';
   if (replyData) {
@@ -161,6 +166,7 @@ function outputMessage({ id, username: sender, text, time, replyTo: replyData })
     replyUser.textContent = sender;
     replyText.textContent = text;
     replyPreview.style.display = 'block';
+    setTimeout(() => replyPreview.scrollIntoView({ behavior: 'smooth', block: 'end' }), 200);
   });
 
   let startX = 0;
@@ -178,6 +184,7 @@ function outputMessage({ id, username: sender, text, time, replyTo: replyData })
       replyUser.textContent = sender;
       replyText.textContent = text;
       replyPreview.style.display = 'block';
+      setTimeout(() => replyPreview.scrollIntoView({ behavior: 'smooth', block: 'end' }), 200);
     }
   });
 
@@ -188,22 +195,18 @@ function outputMessage({ id, username: sender, text, time, replyTo: replyData })
   chatMessages.appendChild(div);
   messageMap.set(id, div);
 
-  if (replyData?.id) {
-    if (messageMap.has(replyData.id)) {
-      const original = messageMap.get(replyData.id);
-      if (!original.querySelector('.reply-tag')) {
-        const tag = document.createElement('div');
-        tag.className = 'reply-tag text-muted small';
-        tag.innerHTML = `🔁 Replied by <b>${sender}</b>`;
-        original.appendChild(tag);
-      }
-      original.classList.add('has-reply');
-    } else {
-      if (!pendingReplies.has(replyData.id)) {
-        pendingReplies.set(replyData.id, []);
-      }
-      pendingReplies.get(replyData.id).push(sender);
+  if (replyData?.id && messageMap.has(replyData.id)) {
+    const original = messageMap.get(replyData.id);
+    if (!original.querySelector('.reply-tag')) {
+      const tag = document.createElement('div');
+      tag.className = 'reply-tag text-muted small';
+      tag.innerHTML = `🔁 Replied by <b>${sender}</b>`;
+      original.appendChild(tag);
     }
+    original.classList.add('has-reply');
+  } else if (replyData?.id) {
+    if (!pendingReplies.has(replyData.id)) pendingReplies.set(replyData.id, []);
+    pendingReplies.get(replyData.id).push(sender);
   }
 
   if (pendingReplies.has(id)) {
@@ -217,6 +220,8 @@ function outputMessage({ id, username: sender, text, time, replyTo: replyData })
     }
     pendingReplies.delete(id);
   }
+
+  scrollToBottom();
 }
 
 cancelReplyBtn.addEventListener('click', () => {
@@ -285,48 +290,9 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   scrollToBottom();
+
   const observer = new MutationObserver(scrollToBottom);
-  observer.observe(chatMessages, { childList: true });
-
-  function scrollToBottom() {
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-  }
-});
-
-const chatFormContainer = document.querySelector('.chat-form-container');
-
-window.addEventListener('resize', () => {
-  if (window.innerHeight < 500) {
-    chatMessages.style.paddingBottom = '200px';
-    window.scrollTo(0, document.body.scrollHeight);
-  } else {
-    chatMessages.style.paddingBottom = '90px';
-  }
-});
-
-window.addEventListener('resize', () => {
-  document.body.style.height = window.innerHeight + 'px';
-});
-
-function adjustForKeyboard() {
-  const form = document.querySelector('.chat-form-container');
-  if (window.innerHeight < 500) {
-    form.style.position = 'absolute';
-    form.style.bottom = '0';
-  } else {
-    form.style.position = 'fixed';
-    form.style.bottom = '0';
-  }
-}
-
-window.addEventListener('resize', adjustForKeyboard);
-window.addEventListener('load', adjustForKeyboard);
-
-let initialHeight = window.innerHeight;
-
-window.addEventListener('resize', () => {
-  const isKeyboard = window.innerHeight < initialHeight;
-  document.body.classList.toggle('keyboard-open', isKeyboard);
+  observer.observe(chatMessages, { childList: true, subtree: true });
 });
 
 function setViewportHeight() {
