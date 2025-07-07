@@ -15,22 +15,7 @@ const { username, room } = Qs.parse(location.search, { ignoreQueryPrefix: true }
 let replyTo = null;
 const messageMap = new Map();
 const typingMap = new Map();
-let isMuted = localStorage.getItem('isMuted') === 'true';
-
-// Set icon state on load
-const muteIcon = document.getElementById('mute-icon');
-if (isMuted) {
-  muteIcon.classList.remove('fa-bell');
-  muteIcon.classList.add('fa-bell-slash');
-}
-
-document.getElementById('mute-toggle')?.addEventListener('click', () => {
-  isMuted = !isMuted;
-  localStorage.setItem('isMuted', isMuted.toString());
-  muteIcon.classList.toggle('fa-bell');
-  muteIcon.classList.toggle('fa-bell-slash');
-});
-
+let isMuted = false;
 
 // Join the room
 socket.emit('joinRoom', { username, room });
@@ -40,7 +25,7 @@ socket.on('roomUsers', ({ room, users }) => {
   if (roomName) roomName.textContent = room;
   if (roomHeader) roomHeader.textContent = room;
   if (usersList) {
-    usersList.innerHTML = users.map(u => `<li>${u.username}</li>`).join('');
+    usersList.innerHTML = users.map(u => <li>${u.username}</li>).join('');
   }
 });
 
@@ -74,19 +59,19 @@ function outputMessage({ id, username: sender, text, time, replyTo: replyData })
 
   let replyHTML = '';
   if (replyData) {
-    replyHTML = `
+    replyHTML = 
       <div class="reply-box" data-target="${replyData.id}">
         <div class="reply-username"><strong>${replyData.username}</strong></div>
         <div class="reply-text">${replyData.text}</div>
       </div>
-    `;
+    ;
   }
 
-  div.innerHTML = `
+  div.innerHTML = 
     ${replyHTML}
     <div class="meta"><strong>${sender}</strong> <span>${time}</span></div>
     <div class="text">${text}</div>
-  `;
+  ;
 
   if (replyData) {
     div.querySelector('.reply-box')?.addEventListener('click', () => scrollToAndHighlight(replyData.id));
@@ -116,14 +101,14 @@ function showTypingIndicator(sender) {
   const div = document.createElement('div');
   div.classList.add('message', 'typing');
   div.dataset.user = sender;
-  div.innerHTML = `
+  div.innerHTML = 
     <div class="meta"><strong>${sender}</strong> <span>typing...</span></div>
     <div class="text d-flex gap-1">
       <div class="dot"></div>
       <div class="dot"></div>
       <div class="dot"></div>
     </div>
-  `;
+  ;
 
   chatMessages.appendChild(div);
   autoScroll();
@@ -199,7 +184,7 @@ function autoScroll() {
 if (window.visualViewport) {
   const fixIOSGap = () => {
     const vh = window.visualViewport.height;
-    document.documentElement.style.setProperty('--safe-vh', `${vh}px`);
+    document.documentElement.style.setProperty('--safe-vh', ${vh}px);
 
     // Extra fix: scroll to bottom if keyboard is open
     if (document.activeElement === msgInput) {
@@ -241,7 +226,7 @@ document.getElementById('theme-toggle')?.addEventListener('click', () => {
 function updateSafeVH() {
   if (window.visualViewport) {
     const vh = window.visualViewport.height;
-    document.documentElement.style.setProperty('--safe-vh', `${vh}px`);
+    document.documentElement.style.setProperty('--safe-vh', ${vh}px);
   }
 }
 
@@ -252,4 +237,4 @@ updateSafeVH();
 if (window.visualViewport) {
   visualViewport.addEventListener('resize', updateSafeVH);
   visualViewport.addEventListener('scroll', updateSafeVH);
-} 
+}
