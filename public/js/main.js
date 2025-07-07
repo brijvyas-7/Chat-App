@@ -17,10 +17,10 @@ const messageMap = new Map();
 const typingMap = new Map();
 let isMuted = false;
 
-// ✅ Join room
+// Join the room
 socket.emit('joinRoom', { username, room });
 
-// ✅ Handle room data
+// Update room UI
 socket.on('roomUsers', ({ room, users }) => {
   if (roomName) roomName.textContent = room;
   if (roomHeader) roomHeader.textContent = room;
@@ -29,32 +29,29 @@ socket.on('roomUsers', ({ room, users }) => {
   }
 });
 
-// ✅ Notification sound
+// Sound
 const notificationSound = new Audio('/sounds/notification.mp3');
-
 document.body.addEventListener('click', () => {
-  notificationSound.play().catch(() => {}); // Needed for iOS Safari
+  notificationSound.play().catch(() => { });
 }, { once: true });
 
-// ✅ Message handler
+// Handle incoming messages
 socket.on('message', (message) => {
   if (message.username !== username && !isMuted) {
     notificationSound.play().catch(() => {});
   }
-
   removeTypingIndicator(message.username);
   outputMessage(message);
   autoScroll();
 });
 
-// ✅ Typing indicator handler
-socket.on('showTyping', ({ username }) => {
-  if (username !== Qs.parse(location.search, { ignoreQueryPrefix: true }).username) {
-    showTypingIndicator(username);
+// Typing indicator
+socket.on('showTyping', ({ username: sender }) => {
+  if (sender !== username) {
+    showTypingIndicator(sender);
   }
 });
 
-// ✅ Message output
 function outputMessage({ id, username: sender, text, time, replyTo: replyData }) {
   const div = document.createElement('div');
   div.classList.add('message', sender === username ? 'you' : sender === 'ChatApp Bot' ? 'bot' : 'other');
@@ -97,7 +94,7 @@ function outputMessage({ id, username: sender, text, time, replyTo: replyData })
   messageMap.set(id, div);
 }
 
-// ✅ Show typing indicator
+// Show typing
 function showTypingIndicator(sender) {
   if (typingMap.has(sender)) return;
 
@@ -122,7 +119,6 @@ function showTypingIndicator(sender) {
   }, 3500);
 }
 
-// ✅ Remove typing indicator
 function removeTypingIndicator(sender) {
   const el = typingMap.get(sender);
   if (el) {
@@ -131,7 +127,7 @@ function removeTypingIndicator(sender) {
   }
 }
 
-// ✅ Submit chat message
+// Send message
 chatForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const msg = msgInput.value.trim();
@@ -147,12 +143,12 @@ chatForm.addEventListener('submit', (e) => {
   hideReplyPreview();
 });
 
-// ✅ Emit typing (no username — server pulls it)
+// Typing event
 msgInput.addEventListener('input', () => {
   socket.emit('typing');
 });
 
-// ✅ Set reply
+// Reply
 function setReply({ id, username, text }) {
   replyTo = { id, username, text };
   replyUser.textContent = username;
@@ -162,7 +158,6 @@ function setReply({ id, username, text }) {
   replyPreview.scrollIntoView({ behavior: 'smooth', block: 'end' });
 }
 
-// ✅ Cancel reply
 cancelReplyBtn?.addEventListener('click', hideReplyPreview);
 function hideReplyPreview() {
   replyTo = null;
@@ -171,7 +166,6 @@ function hideReplyPreview() {
   replyPreview.classList.add('d-none');
 }
 
-// ✅ Scroll to replied message
 function scrollToAndHighlight(id) {
   const el = messageMap.get(id);
   if (!el) return;
@@ -180,29 +174,36 @@ function scrollToAndHighlight(id) {
   setTimeout(() => el.classList.remove('highlight-reply'), 2000);
 }
 
-// ✅ Auto scroll to bottom
 function autoScroll() {
   requestAnimationFrame(() => {
     chatMessages.scrollTop = chatMessages.scrollHeight;
   });
 }
 
-// ✅ iOS fix for keyboard pushing view
+// iOS Safari Keyboard Visual Viewport Fix
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', () => {
+    const vh = window.visualViewport.height;
+    document.documentElement.style.setProperty('--safe-vh', `${vh}px`);
+  });
+}
+
+// Handle sticky header
 msgInput.addEventListener('focus', () => {
   setTimeout(() => {
     msgInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, 300);
 });
 
-// ✅ Mute button toggle
+// Toggle mute
 document.getElementById('mute-toggle')?.addEventListener('click', () => {
-  isMuted = !isMuted;
   const icon = document.getElementById('mute-icon');
+  isMuted = !isMuted;
   icon.classList.toggle('fa-bell');
   icon.classList.toggle('fa-bell-slash');
 });
 
-// ✅ Theme toggle
+// Toggle theme
 document.getElementById('theme-toggle')?.addEventListener('click', () => {
   const body = document.body;
   const icon = document.getElementById('theme-icon');
