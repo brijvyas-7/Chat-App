@@ -1,6 +1,5 @@
+// main.js with Typing Indicator Support
 const socket = io();
-
-// DOM Elements
 const chatForm = document.getElementById('chat-form');
 const chatMessages = document.getElementById('chat-messages');
 const msgInput = document.getElementById('msg');
@@ -8,33 +7,38 @@ const replyPreview = document.getElementById('reply-preview');
 const replyUser = document.getElementById('reply-user');
 const replyText = document.getElementById('reply-text');
 const cancelReplyBtn = document.getElementById('cancel-reply');
-const roomNameEl = document.getElementById('room-name'); // Renamed to avoid conflict
+const roomName = document.getElementById('room-name');
+const roomHeader = document.getElementById('room-header');
 const usersList = document.getElementById('users');
 
 const { username, room } = Qs.parse(location.search, { ignoreQueryPrefix: true });
 
 let replyTo = null;
 const messageMap = new Map();
+let typingTimeout;
 
-// Join room
 socket.emit('joinRoom', { username, room });
 
-// Update room name and users list
 socket.on('roomUsers', ({ room, users }) => {
-  if (roomNameEl) roomNameEl.textContent = room;
-  if (usersList) {
-    usersList.innerHTML = users.map(user => `<li>${user.username}</li>`).join('');
-  }
+  roomName.textContent = room;
+  roomHeader.textContent = room;
+  usersList.innerHTML = users.map(u => `<li>${u.username}</li>`).join('');
 });
 
-// Handle incoming messages
 socket.on('message', (message) => {
   outputMessage(message);
   autoScroll();
 });
 
-// Render a message
+socket.on('typing', ({ username }) => {
+  showTypingIndicator(username);
+});
+
 function outputMessage({ id, username: sender, text, time, replyTo: replyData }) {
+  if (sender !== 'ChatApp Bot' && document.querySelector(`.message.typing[data-user="${sender}"]`)) {
+    document.querySelector(`.message.typing[data-user="${sender}"]`).remove();
+  }
+
   const div = document.createElement('div');
   div.classList.add('message', sender === username ? 'you' : sender === 'ChatApp Bot' ? 'bot' : 'other');
   div.dataset.id = id;
@@ -76,7 +80,31 @@ function outputMessage({ id, username: sender, text, time, replyTo: replyData })
   messageMap.set(id, div);
 }
 
-// Submit message
+function showTypingIndicator(sender) {
+  if (sender === username) return;
+
+  if (document.querySelector(`.message.typing[data-user="${sender}"]`)) return;
+
+  const div = document.createElement('div');
+  div.classList.add('message', 'typing');
+  div.dataset.user = sender;
+  div.innerHTML = `
+    <div class="meta"><strong>${sender}</strong> <span>typing...</span></div>
+    <div class="text d-flex gap-1">
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+    </div>
+  `;
+  chatMessages.appendChild(div);
+  autoScroll();
+
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(() => {
+    div.remove();
+  }, 3000);
+}
+
 chatForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const msg = msgInput.value.trim();
@@ -92,7 +120,10 @@ chatForm.addEventListener('submit', (e) => {
   hideReplyPreview();
 });
 
-// Set reply state
+msgInput.addEventListener('input', () => {
+  socket.emit('typing', { username });
+});
+
 function setReply({ id, username, text }) {
   replyTo = { id, username, text };
   replyUser.textContent = username;
@@ -111,7 +142,6 @@ function hideReplyPreview() {
   replyPreview.classList.add('d-none');
 }
 
-// Scroll to replied message and highlight
 function scrollToAndHighlight(id) {
   const el = messageMap.get(id);
   if (!el) return;
@@ -120,7 +150,6 @@ function scrollToAndHighlight(id) {
   setTimeout(() => el.classList.remove('highlight-reply'), 2000);
 }
 
-// Auto-scroll on new message
 function autoScroll() {
   requestAnimationFrame(() => {
     chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -128,21 +157,18 @@ function autoScroll() {
 }
 
 
-// iOS scroll fix
 msgInput.addEventListener('focus', () => {
   setTimeout(() => {
     msgInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, 300);
 });
 
-// Mute toggle
 document.getElementById('mute-toggle')?.addEventListener('click', () => {
   const icon = document.getElementById('mute-icon');
   icon.classList.toggle('fa-bell');
   icon.classList.toggle('fa-bell-slash');
 });
 
-// Theme toggle
 document.getElementById('theme-toggle')?.addEventListener('click', () => {
   const body = document.body;
   const icon = document.getElementById('theme-icon');
