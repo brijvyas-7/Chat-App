@@ -34,13 +34,7 @@ main {
   overflow: hidden;
 }
 
-/* Sticky header */
-header.sticky-top {
-  height: var(--header-height);
-  padding: 6px 12px;
-  font-size: 1rem;
-  z-index: 999;
-}
+
 
 /* Messages */
 .message {
@@ -138,7 +132,7 @@ header.sticky-top {
 #chat-messages {
   flex-grow: 1;
   overflow-y: auto;
-  padding: 1rem 1rem 6rem;
+  padding-bottom: 6rem;
   scroll-behavior: smooth;
   background: inherit;
 }
@@ -237,3 +231,14 @@ body.dark #chat-messages {
 body.dark .message.typing .dot {
   background: #bbb;
 }
+header.sticky-top {
+  position: sticky;
+  top: 0;
+  z-index: 999;
+}
+html,
+body {
+  height: 100dvh; /* modern iOS fix */
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+

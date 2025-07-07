@@ -15,6 +15,7 @@ const { username, room } = Qs.parse(location.search, { ignoreQueryPrefix: true }
 let replyTo = null;
 const messageMap = new Map();
 const typingMap = new Map();
+let isMuted = false;
 
 // ✅ Join room
 socket.emit('joinRoom', { username, room });
@@ -28,8 +29,19 @@ socket.on('roomUsers', ({ room, users }) => {
   }
 });
 
+// ✅ Notification sound
+const notificationSound = new Audio('/sounds/notification.mp3');
+
+document.body.addEventListener('click', () => {
+  notificationSound.play().catch(() => {}); // Needed for iOS Safari
+}, { once: true });
+
 // ✅ Message handler
 socket.on('message', (message) => {
+  if (message.username !== username && !isMuted) {
+    notificationSound.play().catch(() => {});
+  }
+
   removeTypingIndicator(message.username);
   outputMessage(message);
   autoScroll();
@@ -42,7 +54,7 @@ socket.on('showTyping', ({ username }) => {
   }
 });
 
-
+// ✅ Message output
 function outputMessage({ id, username: sender, text, time, replyTo: replyData }) {
   const div = document.createElement('div');
   div.classList.add('message', sender === username ? 'you' : sender === 'ChatApp Bot' ? 'bot' : 'other');
@@ -85,7 +97,7 @@ function outputMessage({ id, username: sender, text, time, replyTo: replyData })
   messageMap.set(id, div);
 }
 
-// ✅ Typing indicator
+// ✅ Show typing indicator
 function showTypingIndicator(sender) {
   if (typingMap.has(sender)) return;
 
@@ -110,6 +122,7 @@ function showTypingIndicator(sender) {
   }, 3500);
 }
 
+// ✅ Remove typing indicator
 function removeTypingIndicator(sender) {
   const el = typingMap.get(sender);
   if (el) {
@@ -118,7 +131,7 @@ function removeTypingIndicator(sender) {
   }
 }
 
-// ✅ Send message
+// ✅ Submit chat message
 chatForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const msg = msgInput.value.trim();
@@ -134,9 +147,9 @@ chatForm.addEventListener('submit', (e) => {
   hideReplyPreview();
 });
 
-// ✅ Emit typing
+// ✅ Emit typing (no username — server pulls it)
 msgInput.addEventListener('input', () => {
-  socket.emit('typing', { username });
+  socket.emit('typing');
 });
 
 // ✅ Set reply
@@ -158,7 +171,7 @@ function hideReplyPreview() {
   replyPreview.classList.add('d-none');
 }
 
-// ✅ Highlight & Scroll to reply
+// ✅ Scroll to replied message
 function scrollToAndHighlight(id) {
   const el = messageMap.get(id);
   if (!el) return;
@@ -167,27 +180,29 @@ function scrollToAndHighlight(id) {
   setTimeout(() => el.classList.remove('highlight-reply'), 2000);
 }
 
-// ✅ Auto scroll if near bottom
+// ✅ Auto scroll to bottom
 function autoScroll() {
   requestAnimationFrame(() => {
     chatMessages.scrollTop = chatMessages.scrollHeight;
   });
 }
 
-// ✅ Focus scroll fix (iOS/PWA)
+// ✅ iOS fix for keyboard pushing view
 msgInput.addEventListener('focus', () => {
   setTimeout(() => {
     msgInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, 300);
 });
 
-// ✅ Theme toggle
+// ✅ Mute button toggle
 document.getElementById('mute-toggle')?.addEventListener('click', () => {
+  isMuted = !isMuted;
   const icon = document.getElementById('mute-icon');
   icon.classList.toggle('fa-bell');
   icon.classList.toggle('fa-bell-slash');
 });
 
+// ✅ Theme toggle
 document.getElementById('theme-toggle')?.addEventListener('click', () => {
   const body = document.body;
   const icon = document.getElementById('theme-icon');
