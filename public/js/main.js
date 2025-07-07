@@ -15,12 +15,27 @@ const { username, room } = Qs.parse(location.search, { ignoreQueryPrefix: true }
 let replyTo = null;
 const messageMap = new Map();
 const typingMap = new Map();
-let isMuted = false;
+let isMuted = localStorage.getItem('isMuted') === 'true';
 
-// Join the room
+// Update mute icon on load
+const muteIcon = document.getElementById('mute-icon');
+if (isMuted) {
+  muteIcon.classList.remove('fa-bell');
+  muteIcon.classList.add('fa-bell-slash');
+}
+
+// Mute toggle button
+document.getElementById('mute-toggle')?.addEventListener('click', () => {
+  isMuted = !isMuted;
+  localStorage.setItem('isMuted', isMuted.toString());
+  muteIcon.classList.toggle('fa-bell');
+  muteIcon.classList.toggle('fa-bell-slash');
+});
+
+// Join chat room
 socket.emit('joinRoom', { username, room });
 
-// Update room UI
+// Update room and user list
 socket.on('roomUsers', ({ room, users }) => {
   if (roomName) roomName.textContent = room;
   if (roomHeader) roomHeader.textContent = room;
@@ -29,17 +44,23 @@ socket.on('roomUsers', ({ room, users }) => {
   }
 });
 
-// Sound
+// Notification sound setup
 const notificationSound = new Audio('/sounds/notification.mp3');
+notificationSound.load();
 document.body.addEventListener('click', () => {
-  notificationSound.play().catch(() => { });
+  notificationSound.play().catch(() => {});
 }, { once: true });
 
-// Handle incoming messages
+// Incoming messages
 socket.on('message', (message) => {
-  if (message.username !== username && !isMuted) {
-    notificationSound.play().catch(() => { });
+  if (
+    message.username !== username &&
+    message.username !== 'ChatApp Bot' &&
+    !isMuted
+  ) {
+    notificationSound.play().catch(() => {});
   }
+
   removeTypingIndicator(message.username);
   outputMessage(message);
   autoScroll();
@@ -83,10 +104,14 @@ function outputMessage({ id, username: sender, text, time, replyTo: replyData })
   });
 
   let startX = 0;
-  div.addEventListener('touchstart', (e) => (startX = e.touches[0].clientX));
+  div.addEventListener('touchstart', (e) => {
+    startX = e.touches[0].clientX;
+  });
+
   div.addEventListener('touchend', (e) => {
     if (e.changedTouches[0].clientX - startX > 50) {
       setReply({ id, username: sender, text });
+      if (navigator.vibrate) navigator.vibrate(50); // ✅ vibrate only on slide to reply
     }
   });
 
@@ -94,7 +119,6 @@ function outputMessage({ id, username: sender, text, time, replyTo: replyData })
   messageMap.set(id, div);
 }
 
-// Show typing
 function showTypingIndicator(sender) {
   if (typingMap.has(sender)) return;
 
@@ -114,9 +138,7 @@ function showTypingIndicator(sender) {
   autoScroll();
   typingMap.set(sender, div);
 
-  setTimeout(() => {
-    removeTypingIndicator(sender);
-  }, 3500);
+  setTimeout(() => removeTypingIndicator(sender), 3500);
 }
 
 function removeTypingIndicator(sender) {
@@ -127,7 +149,7 @@ function removeTypingIndicator(sender) {
   }
 }
 
-// Send message
+// Submit message
 chatForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const msg = msgInput.value.trim();
@@ -148,7 +170,7 @@ msgInput.addEventListener('input', () => {
   socket.emit('typing');
 });
 
-// Reply
+// Set reply
 function setReply({ id, username, text }) {
   replyTo = { id, username, text };
   replyUser.textContent = username;
@@ -180,13 +202,12 @@ function autoScroll() {
   });
 }
 
-// 🧠 iOS Fix: eliminate bottom gap caused by keyboard + sticky
+// iOS fix for safe height + keyboard
 if (window.visualViewport) {
   const fixIOSGap = () => {
     const vh = window.visualViewport.height;
     document.documentElement.style.setProperty('--safe-vh', `${vh}px`);
 
-    // Extra fix: scroll to bottom if keyboard is open
     if (document.activeElement === msgInput) {
       setTimeout(() => {
         chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -198,23 +219,14 @@ if (window.visualViewport) {
   window.visualViewport.addEventListener('scroll', fixIOSGap);
 }
 
-
-// Handle sticky header
+// Extra scroll on focus
 msgInput.addEventListener('focus', () => {
   setTimeout(() => {
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }, 200);
 });
 
-// Toggle mute
-document.getElementById('mute-toggle')?.addEventListener('click', () => {
-  const icon = document.getElementById('mute-icon');
-  isMuted = !isMuted;
-  icon.classList.toggle('fa-bell');
-  icon.classList.toggle('fa-bell-slash');
-});
-
-// Toggle theme
+// Theme toggle
 document.getElementById('theme-toggle')?.addEventListener('click', () => {
   const body = document.body;
   const icon = document.getElementById('theme-icon');
@@ -222,18 +234,15 @@ document.getElementById('theme-toggle')?.addEventListener('click', () => {
   icon.classList.toggle('fa-moon');
   icon.classList.toggle('fa-sun');
 });
-// ✅ iOS Keyboard + PWA Safe Height Fix
+
+// Initial safe vh set
 function updateSafeVH() {
   if (window.visualViewport) {
     const vh = window.visualViewport.height;
     document.documentElement.style.setProperty('--safe-vh', `${vh}px`);
   }
 }
-
-// Call initially
 updateSafeVH();
-
-// Watch for resize and scroll caused by keyboard
 if (window.visualViewport) {
   visualViewport.addEventListener('resize', updateSafeVH);
   visualViewport.addEventListener('scroll', updateSafeVH);
