@@ -229,11 +229,11 @@ body.dark .chat-panel {
   background: #1a1a1a;
 }
 
-body.dark #chat-form {
+
+body.dark #chat-messages {
   background: #222 !important;
   border-top: 1px solid #333;
 }
-
 body.dark .message.typing .dot {
   background: #bbb;
 }
