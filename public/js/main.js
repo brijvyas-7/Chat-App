@@ -1,4 +1,6 @@
 const socket = io();
+
+// DOM Elements
 const chatForm = document.getElementById('chat-form');
 const chatMessages = document.getElementById('chat-messages');
 const msgInput = document.getElementById('msg');
@@ -6,6 +8,8 @@ const replyPreview = document.getElementById('reply-preview');
 const replyUser = document.getElementById('reply-user');
 const replyText = document.getElementById('reply-text');
 const cancelReplyBtn = document.getElementById('cancel-reply');
+const roomNameEl = document.getElementById('room-name'); // Renamed to avoid conflict
+const usersList = document.getElementById('users');
 
 const { username, room } = Qs.parse(location.search, { ignoreQueryPrefix: true });
 
@@ -15,11 +19,21 @@ const messageMap = new Map();
 // Join room
 socket.emit('joinRoom', { username, room });
 
-socket.on('message', (message) => {
-  outputMessage(message);
-  requestAnimationFrame(() => autoScroll());
+// Update room name and users list
+socket.on('roomUsers', ({ room, users }) => {
+  if (roomNameEl) roomNameEl.textContent = room;
+  if (usersList) {
+    usersList.innerHTML = users.map(user => `<li>${user.username}</li>`).join('');
+  }
 });
 
+// Handle incoming messages
+socket.on('message', (message) => {
+  outputMessage(message);
+  autoScroll();
+});
+
+// Render a message
 function outputMessage({ id, username: sender, text, time, replyTo: replyData }) {
   const div = document.createElement('div');
   div.classList.add('message', sender === username ? 'you' : sender === 'ChatApp Bot' ? 'bot' : 'other');
@@ -45,7 +59,6 @@ function outputMessage({ id, username: sender, text, time, replyTo: replyData })
     div.querySelector('.reply-box')?.addEventListener('click', () => scrollToAndHighlight(replyData.id));
   }
 
-  // Set reply via right-click or swipe
   div.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     setReply({ id, username: sender, text });
@@ -63,6 +76,7 @@ function outputMessage({ id, username: sender, text, time, replyTo: replyData })
   messageMap.set(id, div);
 }
 
+// Submit message
 chatForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const msg = msgInput.value.trim();
@@ -78,6 +92,7 @@ chatForm.addEventListener('submit', (e) => {
   hideReplyPreview();
 });
 
+// Set reply state
 function setReply({ id, username, text }) {
   replyTo = { id, username, text };
   replyUser.textContent = username;
@@ -96,6 +111,7 @@ function hideReplyPreview() {
   replyPreview.classList.add('d-none');
 }
 
+// Scroll to replied message and highlight
 function scrollToAndHighlight(id) {
   const el = messageMap.get(id);
   if (!el) return;
@@ -104,18 +120,33 @@ function scrollToAndHighlight(id) {
   setTimeout(() => el.classList.remove('highlight-reply'), 2000);
 }
 
-// 🛠 Fix auto-scroll based on user scroll position
+// Auto-scroll on new message
 function autoScroll() {
-  const threshold = 100;
-  const scrollFromBottom = chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight;
-  if (scrollFromBottom < threshold) {
+  requestAnimationFrame(() => {
     chatMessages.scrollTop = chatMessages.scrollHeight;
-  }
+  });
 }
 
-// Fix iOS input view scroll issue
+
+// iOS scroll fix
 msgInput.addEventListener('focus', () => {
   setTimeout(() => {
     msgInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, 300);
+});
+
+// Mute toggle
+document.getElementById('mute-toggle')?.addEventListener('click', () => {
+  const icon = document.getElementById('mute-icon');
+  icon.classList.toggle('fa-bell');
+  icon.classList.toggle('fa-bell-slash');
+});
+
+// Theme toggle
+document.getElementById('theme-toggle')?.addEventListener('click', () => {
+  const body = document.body;
+  const icon = document.getElementById('theme-icon');
+  body.classList.toggle('dark');
+  icon.classList.toggle('fa-moon');
+  icon.classList.toggle('fa-sun');
 });
