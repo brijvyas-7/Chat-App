@@ -8,10 +8,10 @@
 }
 
 /* Fix layout on iOS Safari and PWAs */
+
 html, body {
-  height: 100%;
-  margin: 0;
-  padding: 0;
+  height: var(--safe-vh);
+ 
   display: flex;
   flex-direction: column;
   overflow: hidden;

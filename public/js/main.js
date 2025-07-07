@@ -180,19 +180,30 @@ function autoScroll() {
   });
 }
 
-// iOS Safari Keyboard Visual Viewport Fix
+// 🧠 iOS Fix: eliminate bottom gap caused by keyboard + sticky
 if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', () => {
+  const fixIOSGap = () => {
     const vh = window.visualViewport.height;
     document.documentElement.style.setProperty('--safe-vh', `${vh}px`);
-  });
+
+    // Extra fix: scroll to bottom if keyboard is open
+    if (document.activeElement === msgInput) {
+      setTimeout(() => {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }, 100);
+    }
+  };
+
+  window.visualViewport.addEventListener('resize', fixIOSGap);
+  window.visualViewport.addEventListener('scroll', fixIOSGap);
 }
+
 
 // Handle sticky header
 msgInput.addEventListener('focus', () => {
   setTimeout(() => {
-    msgInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, 300);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }, 200);
 });
 
 // Toggle mute
