@@ -1,4 +1,3 @@
-// main.js with Typing Indicator Support
 const socket = io();
 const chatForm = document.getElementById('chat-form');
 const chatMessages = document.getElementById('chat-messages');
@@ -15,30 +14,35 @@ const { username, room } = Qs.parse(location.search, { ignoreQueryPrefix: true }
 
 let replyTo = null;
 const messageMap = new Map();
-let typingTimeout;
+const typingMap = new Map();
 
+// ✅ Join room
 socket.emit('joinRoom', { username, room });
 
+// ✅ Handle room data
 socket.on('roomUsers', ({ room, users }) => {
-  roomName.textContent = room;
-  roomHeader.textContent = room;
-  usersList.innerHTML = users.map(u => `<li>${u.username}</li>`).join('');
+  if (roomName) roomName.textContent = room;
+  if (roomHeader) roomHeader.textContent = room;
+  if (usersList) {
+    usersList.innerHTML = users.map(u => `<li>${u.username}</li>`).join('');
+  }
 });
 
+// ✅ Message handler
 socket.on('message', (message) => {
+  removeTypingIndicator(message.username);
   outputMessage(message);
   autoScroll();
 });
 
+// ✅ Typing indicator handler
 socket.on('typing', ({ username }) => {
-  showTypingIndicator(username);
+  if (username !== Qs.parse(location.search, { ignoreQueryPrefix: true }).username) {
+    showTypingIndicator(username);
+  }
 });
 
 function outputMessage({ id, username: sender, text, time, replyTo: replyData }) {
-  if (sender !== 'ChatApp Bot' && document.querySelector(`.message.typing[data-user="${sender}"]`)) {
-    document.querySelector(`.message.typing[data-user="${sender}"]`).remove();
-  }
-
   const div = document.createElement('div');
   div.classList.add('message', sender === username ? 'you' : sender === 'ChatApp Bot' ? 'bot' : 'other');
   div.dataset.id = id;
@@ -80,10 +84,9 @@ function outputMessage({ id, username: sender, text, time, replyTo: replyData })
   messageMap.set(id, div);
 }
 
+// ✅ Typing indicator
 function showTypingIndicator(sender) {
-  if (sender === username) return;
-
-  if (document.querySelector(`.message.typing[data-user="${sender}"]`)) return;
+  if (typingMap.has(sender)) return;
 
   const div = document.createElement('div');
   div.classList.add('message', 'typing');
@@ -96,15 +99,25 @@ function showTypingIndicator(sender) {
       <div class="dot"></div>
     </div>
   `;
+
   chatMessages.appendChild(div);
   autoScroll();
+  typingMap.set(sender, div);
 
-  clearTimeout(typingTimeout);
-  typingTimeout = setTimeout(() => {
-    div.remove();
-  }, 3000);
+  setTimeout(() => {
+    removeTypingIndicator(sender);
+  }, 3500);
 }
 
+function removeTypingIndicator(sender) {
+  const el = typingMap.get(sender);
+  if (el) {
+    el.remove();
+    typingMap.delete(sender);
+  }
+}
+
+// ✅ Send message
 chatForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const msg = msgInput.value.trim();
@@ -120,10 +133,12 @@ chatForm.addEventListener('submit', (e) => {
   hideReplyPreview();
 });
 
+// ✅ Emit typing
 msgInput.addEventListener('input', () => {
   socket.emit('typing', { username });
 });
 
+// ✅ Set reply
 function setReply({ id, username, text }) {
   replyTo = { id, username, text };
   replyUser.textContent = username;
@@ -133,8 +148,8 @@ function setReply({ id, username, text }) {
   replyPreview.scrollIntoView({ behavior: 'smooth', block: 'end' });
 }
 
+// ✅ Cancel reply
 cancelReplyBtn?.addEventListener('click', hideReplyPreview);
-
 function hideReplyPreview() {
   replyTo = null;
   replyUser.textContent = '';
@@ -142,6 +157,7 @@ function hideReplyPreview() {
   replyPreview.classList.add('d-none');
 }
 
+// ✅ Highlight & Scroll to reply
 function scrollToAndHighlight(id) {
   const el = messageMap.get(id);
   if (!el) return;
@@ -150,19 +166,21 @@ function scrollToAndHighlight(id) {
   setTimeout(() => el.classList.remove('highlight-reply'), 2000);
 }
 
+// ✅ Auto scroll if near bottom
 function autoScroll() {
   requestAnimationFrame(() => {
     chatMessages.scrollTop = chatMessages.scrollHeight;
   });
 }
 
-
+// ✅ Focus scroll fix (iOS/PWA)
 msgInput.addEventListener('focus', () => {
   setTimeout(() => {
     msgInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, 300);
 });
 
+// ✅ Theme toggle
 document.getElementById('mute-toggle')?.addEventListener('click', () => {
   const icon = document.getElementById('mute-icon');
   icon.classList.toggle('fa-bell');
