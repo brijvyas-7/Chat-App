@@ -36,11 +36,12 @@ socket.on('message', (message) => {
 });
 
 // ✅ Typing indicator handler
-socket.on('typing', ({ username }) => {
+socket.on('showTyping', ({ username }) => {
   if (username !== Qs.parse(location.search, { ignoreQueryPrefix: true }).username) {
     showTypingIndicator(username);
   }
 });
+
 
 function outputMessage({ id, username: sender, text, time, replyTo: replyData }) {
   const div = document.createElement('div');
