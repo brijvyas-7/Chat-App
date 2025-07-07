@@ -232,18 +232,3 @@ main {
   max-width: 75%;
   box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
-/* Safe area for iOS notch (header) */
-header.sticky-top {
-  padding-top: env(safe-area-inset-top, 12px); /* fallback 12px */
-  padding-bottom: 6px;
-  z-index: 999;
-}
-
-/* Input form safe spacing */
-#chat-form {
-  margin-bottom: env(safe-area-inset-bottom, 10px);
-}
-body {
-  padding-top: env(safe-area-inset-top, 12px);
-  padding-bottom: env(safe-area-inset-bottom, 10px);
-}

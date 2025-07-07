@@ -109,18 +109,11 @@ function outputMessage({ id, username: sender, text, time, replyTo: replyData })
   });
 
   div.addEventListener('touchend', (e) => {
-  if (e.changedTouches[0].clientX - startX > 50) {
-    setReply({ id, username: sender, text });
-
-    // ✅ iOS-safe vibration trigger
-    try {
-      window.navigator?.vibrate?.(50);
-    } catch (err) {
-      // silently fail
+    if (e.changedTouches[0].clientX - startX > 50) {
+      setReply({ id, username: sender, text });
+      if (navigator.vibrate) navigator.vibrate(50); // ✅ vibrate only on slide to reply
     }
-  }
-});
-
+  });
 
   chatMessages.appendChild(div);
   messageMap.set(id, div);
