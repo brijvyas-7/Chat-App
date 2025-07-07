@@ -25,7 +25,7 @@ socket.on('roomUsers', ({ room, users }) => {
   if (roomName) roomName.textContent = room;
   if (roomHeader) roomHeader.textContent = room;
   if (usersList) {
-    usersList.innerHTML = users.map(u => <li>${u.username}</li>).join('');
+    usersList.innerHTML = users.map(u => `<li>${u.username}</li>`).join('');
   }
 });
 
@@ -38,7 +38,7 @@ document.body.addEventListener('click', () => {
 // Handle incoming messages
 socket.on('message', (message) => {
   if (message.username !== username && !isMuted) {
-    notificationSound.play().catch(() => { });
+    notificationSound.play().catch(() => {});
   }
   removeTypingIndicator(message.username);
   outputMessage(message);
@@ -59,19 +59,19 @@ function outputMessage({ id, username: sender, text, time, replyTo: replyData })
 
   let replyHTML = '';
   if (replyData) {
-    replyHTML = 
+    replyHTML = `
       <div class="reply-box" data-target="${replyData.id}">
         <div class="reply-username"><strong>${replyData.username}</strong></div>
         <div class="reply-text">${replyData.text}</div>
       </div>
-    ;
+    `;
   }
 
-  div.innerHTML = 
+  div.innerHTML = `
     ${replyHTML}
     <div class="meta"><strong>${sender}</strong> <span>${time}</span></div>
     <div class="text">${text}</div>
-  ;
+  `;
 
   if (replyData) {
     div.querySelector('.reply-box')?.addEventListener('click', () => scrollToAndHighlight(replyData.id));
@@ -101,14 +101,14 @@ function showTypingIndicator(sender) {
   const div = document.createElement('div');
   div.classList.add('message', 'typing');
   div.dataset.user = sender;
-  div.innerHTML = 
+  div.innerHTML = `
     <div class="meta"><strong>${sender}</strong> <span>typing...</span></div>
     <div class="text d-flex gap-1">
       <div class="dot"></div>
       <div class="dot"></div>
       <div class="dot"></div>
     </div>
-  ;
+  `;
 
   chatMessages.appendChild(div);
   autoScroll();
@@ -180,30 +180,19 @@ function autoScroll() {
   });
 }
 
-// 🧠 iOS Fix: eliminate bottom gap caused by keyboard + sticky
+// iOS Safari Keyboard Visual Viewport Fix
 if (window.visualViewport) {
-  const fixIOSGap = () => {
+  window.visualViewport.addEventListener('resize', () => {
     const vh = window.visualViewport.height;
-    document.documentElement.style.setProperty('--safe-vh', ${vh}px);
-
-    // Extra fix: scroll to bottom if keyboard is open
-    if (document.activeElement === msgInput) {
-      setTimeout(() => {
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-      }, 100);
-    }
-  };
-
-  window.visualViewport.addEventListener('resize', fixIOSGap);
-  window.visualViewport.addEventListener('scroll', fixIOSGap);
+    document.documentElement.style.setProperty('--safe-vh', `${vh}px`);
+  });
 }
-
 
 // Handle sticky header
 msgInput.addEventListener('focus', () => {
   setTimeout(() => {
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-  }, 200);
+    msgInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 300);
 });
 
 // Toggle mute
@@ -222,19 +211,3 @@ document.getElementById('theme-toggle')?.addEventListener('click', () => {
   icon.classList.toggle('fa-moon');
   icon.classList.toggle('fa-sun');
 });
-// ✅ iOS Keyboard + PWA Safe Height Fix
-function updateSafeVH() {
-  if (window.visualViewport) {
-    const vh = window.visualViewport.height;
-    document.documentElement.style.setProperty('--safe-vh', ${vh}px);
-  }
-}
-
-// Call initially
-updateSafeVH();
-
-// Watch for resize and scroll caused by keyboard
-if (window.visualViewport) {
-  visualViewport.addEventListener('resize', updateSafeVH);
-  visualViewport.addEventListener('scroll', updateSafeVH);
-}
