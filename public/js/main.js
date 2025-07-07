@@ -2,240 +2,141 @@ const socket = io();
 const chatForm = document.getElementById('chat-form');
 const chatMessages = document.getElementById('chat-messages');
 const msgInput = document.getElementById('msg');
+const typingIndicator = document.getElementById('typing-indicator');
 const replyPreview = document.getElementById('reply-preview');
 const replyUser = document.getElementById('reply-user');
 const replyText = document.getElementById('reply-text');
-const cancelReplyBtn = document.getElementById('cancel-reply');
-const roomName = document.getElementById('room-name');
-const roomHeader = document.getElementById('room-header');
-const usersList = document.getElementById('users');
+const cancelReply = document.getElementById('cancel-reply');
+const themeBtn = document.getElementById('theme-toggle');
+const muteBtn = document.getElementById('mute-toggle');
 
 const { username, room } = Qs.parse(location.search, { ignoreQueryPrefix: true });
+let replyTo = null, isMuted = false;
+const typingUsers = new Set();
 
-let replyTo = null;
-const messageMap = new Map();
-const typingMap = new Map();
-let isMuted = false;
-
-// Join the room
+// Join room
 socket.emit('joinRoom', { username, room });
 
-// Update room UI
-socket.on('roomUsers', ({ room, users }) => {
-  if (roomName) roomName.textContent = room;
-  if (roomHeader) roomHeader.textContent = room;
-  if (usersList) {
-    usersList.innerHTML = users.map(u => `<li>${u.username}</li>`).join('');
+// Utility: check if user is near bottom
+function isUserNearBottom() {
+  const threshold = 100;
+  return (
+    chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight
+    < threshold
+  );
+}
+
+// Robust scroll-to-bottom
+function scrollToBottom(force = false) {
+  if (force || isUserNearBottom()) {
+    requestAnimationFrame(() => {
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    });
+  }
+}
+
+// Incoming messages
+socket.on('message', msg => {
+  if (msg.username !== username && !isMuted) {
+    new Audio('/sounds/notification.mp3').play().catch(() => {});
+  }
+  addMessage(msg);
+});
+
+// Typing indicator from others
+socket.on('showTyping', ({ username: u }) => {
+  if (u !== username && !typingUsers.has(u)) {
+    typingUsers.add(u);
+    typingIndicator.querySelector('#typing-user').textContent = u;
+    typingIndicator.classList.remove('d-none');
+    chatMessages.appendChild(typingIndicator);
+    scrollToBottom();
+    setTimeout(() => {
+      typingUsers.delete(u);
+      if (!typingUsers.size) typingIndicator.classList.add('d-none');
+    }, 1500);
   }
 });
 
-// Sound
-const notificationSound = new Audio('/sounds/notification.mp3');
-document.body.addEventListener('click', () => {
-  notificationSound.play().catch(() => { });
-}, { once: true });
+// Add new message and auto-scroll
+function addMessage({ id, username: u, text, time, replyTo: r }) {
+  typingIndicator.classList.add('d-none');
 
-// Handle incoming messages
-socket.on('message', (message) => {
-  if (message.username !== username && !isMuted) {
-    notificationSound.play().catch(() => { });
-  }
-  removeTypingIndicator(message.username);
-  outputMessage(message);
-  autoScroll();
-});
-
-// Typing indicator
-socket.on('showTyping', ({ username: sender }) => {
-  if (sender !== username) {
-    showTypingIndicator(sender);
-  }
-});
-
-function outputMessage({ id, username: sender, text, time, replyTo: replyData }) {
   const div = document.createElement('div');
-  div.classList.add('message', sender === username ? 'you' : sender === 'ChatApp Bot' ? 'bot' : 'other');
-  div.dataset.id = id;
+  div.className = 'message ' + (u === username ? 'you' : 'other');
+  div.id = id;
 
-  let replyHTML = '';
-  if (replyData) {
-    replyHTML = `
-      <div class="reply-box" data-target="${replyData.id}">
-        <div class="reply-username"><strong>${replyData.username}</strong></div>
-        <div class="reply-text">${replyData.text}</div>
-      </div>
-    `;
+  if (r) {
+    const replyBox = document.createElement('div');
+    replyBox.className = 'reply-box';
+    replyBox.innerHTML = `<strong>${r.username}</strong>: ${r.text}`;
+    replyBox.addEventListener('click', () => {
+      const target = document.getElementById(r.id);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    div.appendChild(replyBox);
   }
 
-  div.innerHTML = `
-    ${replyHTML}
-    <div class="meta"><strong>${sender}</strong> <span>${time}</span></div>
+  div.innerHTML += `
+    <div class="meta"><strong>${u}</strong> @ ${time}</div>
     <div class="text">${text}</div>
   `;
 
-  if (replyData) {
-    div.querySelector('.reply-box')?.addEventListener('click', () => scrollToAndHighlight(replyData.id));
-  }
-
-  div.addEventListener('contextmenu', (e) => {
-    e.preventDefault();
-    setReply({ id, username: sender, text });
-  });
-
+  // Swipe to reply
   let startX = 0;
-  div.addEventListener('touchstart', (e) => (startX = e.touches[0].clientX));
-  div.addEventListener('touchend', (e) => {
-    if (e.changedTouches[0].clientX - startX > 50) {
-      setReply({ id, username: sender, text });
-    }
+  div.addEventListener('touchstart', e => startX = e.touches[0].clientX);
+  div.addEventListener('touchend', e => {
+    if (e.changedTouches[0].clientX - startX > 60) setReply({ id, username: u, text });
   });
 
-  chatMessages.appendChild(div);
-  messageMap.set(id, div);
-}
-
-// Show typing
-function showTypingIndicator(sender) {
-  if (typingMap.has(sender)) return;
-
-  const div = document.createElement('div');
-  div.classList.add('message', 'typing');
-  div.dataset.user = sender;
-  div.innerHTML = `
-    <div class="meta"><strong>${sender}</strong> <span>typing...</span></div>
-    <div class="text d-flex gap-1">
-      <div class="dot"></div>
-      <div class="dot"></div>
-      <div class="dot"></div>
-    </div>
-  `;
+  // Right-click reply
+  div.addEventListener('contextmenu', e => { e.preventDefault(); setReply({ id, username: u, text }); });
 
   chatMessages.appendChild(div);
-  autoScroll();
-  typingMap.set(sender, div);
-
-  setTimeout(() => {
-    removeTypingIndicator(sender);
-  }, 3500);
+  scrollToBottom();
 }
 
-function removeTypingIndicator(sender) {
-  const el = typingMap.get(sender);
-  if (el) {
-    el.remove();
-    typingMap.delete(sender);
-  }
-}
-
-// Send message
-chatForm.addEventListener('submit', (e) => {
+// Send new message
+chatForm.addEventListener('submit', e => {
   e.preventDefault();
-  const msg = msgInput.value.trim();
-  if (!msg) return;
-
-  socket.emit('chatMessage', {
-    text: msg,
-    replyTo: replyTo ? { ...replyTo } : null,
-  });
-
+  const txt = msgInput.value.trim();
+  if (!txt) return;
+  socket.emit('chatMessage', { text: txt, replyTo: replyTo ? { ...replyTo } : null });
   msgInput.value = '';
   replyTo = null;
-  hideReplyPreview();
+  replyPreview.classList.add('d-none');
 });
 
-// Typing event
+// Reply setup
+function setReply(msg) {
+  replyTo = msg;
+  replyUser.textContent = msg.username;
+  replyText.textContent = msg.text;
+  replyPreview.classList.remove('d-none');
+  msgInput.focus();
+}
+cancelReply.addEventListener('click', () => {
+  replyTo = null;
+  replyPreview.classList.add('d-none');
+});
+
+// Typing: emit to others
 msgInput.addEventListener('input', () => {
   socket.emit('typing');
 });
 
-// Reply
-function setReply({ id, username, text }) {
-  replyTo = { id, username, text };
-  replyUser.textContent = username;
-  replyText.textContent = text;
-  replyPreview.classList.remove('d-none');
-  msgInput.focus();
-  replyPreview.scrollIntoView({ behavior: 'smooth', block: 'end' });
-}
-
-cancelReplyBtn?.addEventListener('click', hideReplyPreview);
-function hideReplyPreview() {
-  replyTo = null;
-  replyUser.textContent = '';
-  replyText.textContent = '';
-  replyPreview.classList.add('d-none');
-}
-
-function scrollToAndHighlight(id) {
-  const el = messageMap.get(id);
-  if (!el) return;
-  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  el.classList.add('highlight-reply');
-  setTimeout(() => el.classList.remove('highlight-reply'), 2000);
-}
-
-function autoScroll() {
-  requestAnimationFrame(() => {
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-  });
-}
-
-// 🧠 iOS Fix: eliminate bottom gap caused by keyboard + sticky
-if (window.visualViewport) {
-  const fixIOSGap = () => {
-    const vh = window.visualViewport.height;
-    document.documentElement.style.setProperty('--safe-vh', `${vh}px`);
-
-    // Extra fix: scroll to bottom if keyboard is open
-    if (document.activeElement === msgInput) {
-      setTimeout(() => {
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-      }, 100);
-    }
-  };
-
-  window.visualViewport.addEventListener('resize', fixIOSGap);
-  window.visualViewport.addEventListener('scroll', fixIOSGap);
-}
-
-
-// Handle sticky header
+// Scroll on focus (force)
 msgInput.addEventListener('focus', () => {
-  setTimeout(() => {
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-  }, 200);
+  setTimeout(() => scrollToBottom(true), 200);
 });
 
-// Toggle mute
-document.getElementById('mute-toggle')?.addEventListener('click', () => {
-  const icon = document.getElementById('mute-icon');
+// Theme & mute toggles
+themeBtn.addEventListener('click', () => {
+  document.body.classList.toggle('dark');
+  themeBtn.querySelector('i').classList.toggle('fa-moon');
+  themeBtn.querySelector('i').classList.toggle('fa-sun');
+});
+muteBtn.addEventListener('click', () => {
   isMuted = !isMuted;
-  icon.classList.toggle('fa-bell');
-  icon.classList.toggle('fa-bell-slash');
+  muteBtn.querySelector('i').classList.toggle('fa-bell-slash');
 });
-
-// Toggle theme
-document.getElementById('theme-toggle')?.addEventListener('click', () => {
-  const body = document.body;
-  const icon = document.getElementById('theme-icon');
-  body.classList.toggle('dark');
-  icon.classList.toggle('fa-moon');
-  icon.classList.toggle('fa-sun');
-});
-// ✅ iOS Keyboard + PWA Safe Height Fix
-function updateSafeVH() {
-  if (window.visualViewport) {
-    const vh = window.visualViewport.height;
-    document.documentElement.style.setProperty('--safe-vh', `${vh}px`);
-  }
-}
-
-// Call initially
-updateSafeVH();
-
-// Watch for resize and scroll caused by keyboard
-if (window.visualViewport) {
-  visualViewport.addEventListener('resize', updateSafeVH);
-  visualViewport.addEventListener('scroll', updateSafeVH);
-}  
-
