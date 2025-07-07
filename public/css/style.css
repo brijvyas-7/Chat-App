@@ -198,7 +198,7 @@ body.dark .reply-box {
   background: #2a2a2a;
   color: #ddd;
 }
-body.dark #chat-messages {
+body.dark #chat-message {
   background: #222 !important;
   border-top: 1px solid #333;
 }
@@ -219,7 +219,7 @@ main {
 #chat-messages {
   flex-grow: 1;
   overflow-y: auto;
-}
+} 
 .message.bot {
   background: #f1f1f1;
   color: #555;
