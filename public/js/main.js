@@ -38,7 +38,7 @@ document.body.addEventListener('click', () => {
 // Handle incoming messages
 socket.on('message', (message) => {
   if (message.username !== username && !isMuted) {
-    notificationSound.play().catch(() => {});
+    notificationSound.play().catch(() => { });
   }
   removeTypingIndicator(message.username);
   outputMessage(message);
@@ -222,3 +222,19 @@ document.getElementById('theme-toggle')?.addEventListener('click', () => {
   icon.classList.toggle('fa-moon');
   icon.classList.toggle('fa-sun');
 });
+// ✅ iOS Keyboard + PWA Safe Height Fix
+function updateSafeVH() {
+  if (window.visualViewport) {
+    const vh = window.visualViewport.height;
+    document.documentElement.style.setProperty('--safe-vh', `${vh}px`);
+  }
+}
+
+// Call initially
+updateSafeVH();
+
+// Watch for resize and scroll caused by keyboard
+if (window.visualViewport) {
+  visualViewport.addEventListener('resize', updateSafeVH);
+  visualViewport.addEventListener('scroll', updateSafeVH);
+}

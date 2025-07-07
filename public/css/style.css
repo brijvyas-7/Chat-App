@@ -9,15 +9,7 @@
 
 /* Fix layout on iOS Safari and PWAs */
 
-html, body {
-  height: var(--safe-vh);
- 
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  -webkit-overflow-scrolling: touch;
-  background: #f8f9fa;
-}
+
 
 @supports (-webkit-touch-callout: none) {
   html {
@@ -209,4 +201,22 @@ body.dark .reply-box {
 body.dark #chat-form {
   background: #222 !important;
   border-top: 1px solid #333;
+}
+html, body {
+  padding: 0;
+  margin: 0;
+  height: var(--safe-vh);
+  overflow: hidden;
+}
+
+main {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+#chat-messages {
+  flex-grow: 1;
+  overflow-y: auto;
 }
