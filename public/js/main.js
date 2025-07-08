@@ -16,87 +16,42 @@ const typingUsers = new Set();
 // Join room
 socket.emit('joinRoom', { username, room });
 
-// Enhanced scrollToBottom function
+// Scroll to bottom function
 function scrollToBottom(force = false) {
-  const nearBottom = chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 100;
-  if (force || nearBottom) {
-    // Use instant scroll when keyboard is open or on iOS
-    const behavior = document.body.classList.contains('keyboard-open') || /iPad|iPhone|iPod/.test(navigator.userAgent) 
-      ? 'auto' 
-      : 'smooth';
+  try {
+    const messages = chatMessages;
+    const nearBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 200;
     
-    chatMessages.scrollTo({
-      top: chatMessages.scrollHeight,
-      behavior
-    });
+    if (force || nearBottom) {
+      messages.scrollTo({
+        top: messages.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
+  } catch (e) {
+    console.log('Scroll error:', e);
   }
 }
 
-// Play notification sound on first interaction
-document.body.addEventListener('click', () => { 
-  notificationSound.play().catch(() => {}); 
-}, { once: true });
-
-// Handle incoming message
-socket.on('message', msg => {
-  if (msg.username !== username && msg.username !== 'ChatApp Bot' && !isMuted) {
-    notificationSound.play().catch(() => {});
-  }
-  addMessage(msg);
-});
-
-// Show typing indicator at bottom (WhatsApp style)
-socket.on('showTyping', ({ username: u }) => {
-  if (u !== username && !typingUsers.has(u)) {
-    typingUsers.add(u);
-    
-    // Remove existing typing indicator if any
-    const existingIndicator = document.querySelector('.typing-indicator');
-    if (existingIndicator) {
-      existingIndicator.remove();
-    }
-    
-    // Create new typing indicator at bottom
-    const typingDiv = document.createElement('div');
-    typingDiv.className = 'message typing typing-indicator';
-    typingDiv.innerHTML = `
-      <div class="text d-flex gap-1">
-        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-      </div>
-      <div class="meta"><strong>${u}</strong> is typing...</div>
-    `;
-    
-    chatMessages.appendChild(typingDiv);
-    scrollToBottom(true); // Force scroll when typing appears
-    
-    setTimeout(() => {
-      typingUsers.delete(u);
-      if (!typingUsers.size) {
-        const indicator = document.querySelector('.typing-indicator');
-        if (indicator) indicator.remove();
-      }
-    }, 1500);
-  }
-});
-
+// Add message to chat
 function addMessage({ id: msgID, username: u, text, time, replyTo: r }) {
-  // Remove typing indicator when new message arrives
-  const typingIndicator = document.querySelector('.typing-indicator');
-  if (typingIndicator) typingIndicator.remove();
-  
   const div = document.createElement('div');
-  div.className = 'message ' + (u === username ? 'you' : 'other');
+  div.className = `message ${u === username ? 'you' : 'other'}${r ? ' has-reply' : ''}`;
   div.id = msgID;
 
   if (r) {
-    const rb = document.createElement('div');
-    rb.className = 'reply-box';
-    rb.innerHTML = `<strong>${r.username}</strong>: ${r.text}`;
-    rb.addEventListener('click', () => {
-      const target = document.getElementById(r.id);
-      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    });
-    div.appendChild(rb);
+    const replyDiv = document.createElement('div');
+    replyDiv.className = 'message-reply';
+    replyDiv.innerHTML = `
+      <div class="reply-indicator">
+        <div class="reply-line"></div>
+        <div class="reply-content">
+          <div class="reply-sender">${r.username}</div>
+          <div class="reply-text">${r.text}</div>
+        </div>
+      </div>
+    `;
+    div.appendChild(replyDiv);
   }
 
   div.innerHTML += `
@@ -104,32 +59,24 @@ function addMessage({ id: msgID, username: u, text, time, replyTo: r }) {
     <div class="text">${text}</div>
   `;
 
-  // Swipe or context reply
-  let sx = 0;
-  div.addEventListener('touchstart', e => sx = e.touches[0].clientX);
-  div.addEventListener('touchend', e => {
-    if (e.changedTouches[0].clientX - sx > 60) {
-      replyTo = { id: msgID, username: u, text };
-      replyUserElem.textContent = u;
-      replyTextElem.textContent = text;
-      replyPreview.classList.remove('d-none');
-      msgInput.focus();
-      navigator.vibrate?.(100);
-    }
-  });
-  
+  // Add reply functionality
   div.addEventListener('contextmenu', e => {
     e.preventDefault();
-    replyTo = { id: msgID, username: u, text };
-    replyUserElem.textContent = u;
-    replyTextElem.textContent = text;
-    replyPreview.classList.remove('d-none');
-    msgInput.focus();
-    navigator.vibrate?.(100);
+    setupReply(u, msgID, text);
   });
 
   chatMessages.appendChild(div);
-  scrollToBottom(true); // Always scroll to bottom for new messages
+  scrollToBottom(true);
+}
+
+// Setup reply
+function setupReply(username, msgID, text) {
+  replyTo = { id: msgID, username, text };
+  replyUserElem.textContent = username;
+  replyTextElem.textContent = text.length > 30 ? text.substring(0, 30) + '...' : text;
+  replyPreview.classList.remove('d-none');
+  msgInput.focus();
+  if (navigator.vibrate) navigator.vibrate(100);
 }
 
 // Form submit
@@ -140,7 +87,11 @@ document.getElementById('chat-form').addEventListener('submit', e => {
   
   socket.emit('chatMessage', { 
     text: txt, 
-    replyTo: replyTo ? { ...replyTo } : null 
+    replyTo: replyTo ? { 
+      id: replyTo.id, 
+      username: replyTo.username, 
+      text: replyTo.text 
+    } : null 
   });
   
   msgInput.value = '';
@@ -148,50 +99,21 @@ document.getElementById('chat-form').addEventListener('submit', e => {
   replyPreview.classList.add('d-none');
 });
 
-// Typing event
+// Cancel reply
+cancelReplyBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  replyTo = null;
+  replyPreview.classList.add('d-none');
+});
+
+// Typing indicator
 let typingTimeout;
 msgInput.addEventListener('input', () => {
   socket.emit('typing');
   clearTimeout(typingTimeout);
   typingTimeout = setTimeout(() => {
-    // Automatically stop typing indication after 2 seconds of inactivity
+    // Stop typing indication
   }, 2000);
-});
-
-// iOS Keyboard Handling
-if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
-  let originalViewportHeight = window.innerHeight;
-  
-  function handleKeyboard() {
-    const currentViewportHeight = window.innerHeight;
-    const isKeyboardVisible = currentViewportHeight < originalViewportHeight;
-    
-    if (isKeyboardVisible) {
-      document.body.classList.add('keyboard-open');
-      setTimeout(() => {
-        scrollToBottom(true);
-        chatMessages.style.paddingBottom = 'calc(60px + env(safe-area-inset-bottom))';
-      }, 300);
-    } else {
-      document.body.classList.remove('keyboard-open');
-      chatMessages.style.paddingBottom = '60px';
-    }
-    
-    originalViewportHeight = currentViewportHeight;
-  }
-
-  // Initial check
-  handleKeyboard();
-  
-  // Add event listeners
-  window.addEventListener('resize', handleKeyboard);
-  window.addEventListener('orientationchange', handleKeyboard);
-}
-
-// Cancel reply
-cancelReplyBtn.addEventListener('click', () => {
-  replyTo = null;
-  replyPreview.classList.add('d-none');
 });
 
 // Theme toggle
@@ -200,6 +122,7 @@ themeBtn.addEventListener('click', () => {
   const icon = themeBtn.querySelector('i');
   icon.classList.toggle('fa-moon');
   icon.classList.toggle('fa-sun');
+  localStorage.setItem('darkMode', document.body.classList.contains('dark'));
 });
 
 // Mute toggle
@@ -211,19 +134,156 @@ muteBtn.addEventListener('click', () => {
   icon.classList.toggle('fa-bell-slash');
 });
 
-// Handle iOS viewport changes
-function handleViewportChanges() {
-  if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
-    const appContainer = document.querySelector('.app-container');
-    const updateHeight = () => {
-      const vh = window.innerHeight;
-      appContainer.style.height = `${vh}px`;
-    };
-    
-    updateHeight();
-    window.addEventListener('resize', updateHeight);
-  }
+// Initialize dark mode if previously set
+if (localStorage.getItem('darkMode') === 'true') {
+  document.body.classList.add('dark');
+  themeBtn.querySelector('i').classList.replace('fa-moon', 'fa-sun');
 }
 
-// Initialize
-handleViewportChanges();
+// iOS Keyboard Handling
+if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+  let originalHeight = window.innerHeight;
+  
+  function checkKeyboard() {
+    const currentHeight = window.innerHeight;
+    const keyboardVisible = currentHeight < originalHeight * 0.7;
+    
+    if (keyboardVisible) {
+      document.body.classList.add('keyboard-open');
+      setTimeout(() => {
+        scrollToBottom(true);
+      }, 300);
+    } else {
+      document.body.classList.remove('keyboard-open');
+    }
+    
+    // Update original height for next check
+    originalHeight = currentHeight;
+  }
+  
+  // Initial check
+  checkKeyboard();
+  
+  // Event listeners
+  window.addEventListener('resize', checkKeyboard);
+  window.addEventListener('orientationchange', () => {
+    setTimeout(checkKeyboard, 300);
+  });
+  
+  // Additional fix for input focus
+  msgInput.addEventListener('focus', () => {
+    setTimeout(() => {
+      scrollToBottom(true);
+    }, 500);
+  });
+}
+
+// Handle incoming messages
+socket.on('message', msg => {
+  if (msg.username !== username && msg.username !== 'ChatApp Bot' && !isMuted) {
+    notificationSound.play().catch(() => {});
+  }
+  addMessage(msg);
+});
+
+// Handle typing indicators
+socket.on('showTyping', ({ username: u }) => {
+  if (u !== username && !typingUsers.has(u)) {
+    typingUsers.add(u);
+    
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'message typing typing-indicator';
+    typingDiv.innerHTML = `
+      <div class="text d-flex gap-1">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+      </div>
+      <div class="meta"><strong>${u}</strong> is typing...</div>
+    `;
+    
+    chatMessages.appendChild(typingDiv);
+    scrollToBottom(true);
+    
+    setTimeout(() => {
+      typingUsers.delete(u);
+      const indicator = document.querySelector('.typing-indicator');
+      if (indicator) indicator.remove();
+    }, 1500);
+  }
+});
+
+// PWA Installation
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  const installBtn = document.getElementById('installPWA');
+  installBtn.classList.remove('d-none');
+  installBtn.addEventListener('click', () => {
+    e.prompt();
+    installBtn.classList.add('d-none');
+  });
+});
+
+// Initial scroll to bottom
+setTimeout(() => {
+  scrollToBottom(true);
+}, 500);
+// Swipe-to-reply implementation
+let touchStartX = 0;
+let currentSwipeMsg = null;
+
+// Add to each message element:
+function addSwipeListener(msgElement) {
+  msgElement.addEventListener('touchstart', (e) => {
+    touchStartX = e.touches[0].clientX;
+    currentSwipeMsg = msgElement;
+  });
+  
+  msgElement.addEventListener('touchmove', (e) => {
+    if (!currentSwipeMsg) return;
+    const diff = e.touches[0].clientX - touchStartX;
+    if (diff > 0 && diff < 100) {
+      msgElement.style.transform = `translateX(${diff}px)`;
+    }
+  });
+  
+  msgElement.addEventListener('touchend', (e) => {
+    if (!currentSwipeMsg) return;
+    const diff = e.changedTouches[0].clientX - touchStartX;
+    if (diff > 60) {
+      const msgId = msgElement.id;
+      const username = msgElement.querySelector('.meta strong').textContent;
+      const text = msgElement.querySelector('.text').textContent;
+      setupReply(username, msgId, text);
+    }
+    msgElement.style.transform = '';
+    currentSwipeMsg = null;
+  });
+}
+
+// Enhanced keyboard detection
+function setupKeyboardHandling() {
+  if (!/iPad|iPhone|iPod/.test(navigator.userAgent)) return;
+
+  let visualViewport = window.visualViewport;
+  
+  visualViewport.addEventListener('resize', () => {
+    const keyboardHeight = window.innerHeight - visualViewport.height;
+    if (keyboardHeight > 100) {
+      document.body.classList.add('keyboard-open');
+      scrollToBottom(true);
+    } else {
+      document.body.classList.remove('keyboard-open');
+    }
+  });
+}
+
+// Initialize in your socket.io connection callback
+socket.on('connect', () => {
+  setupKeyboardHandling();
+  
+  // Add to each new message
+  socket.on('message', (msg) => {
+    // ... existing message handling ...
+    const msgElement = document.getElementById(msg.id);
+    if (msgElement) addSwipeListener(msgElement);
+  });
+});

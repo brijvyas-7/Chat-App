@@ -3,24 +3,24 @@
   --input-height: 56px;
   --bubble-radius: 16px;
   --max-message-width: 80%;
+  --reply-indicator-color: #25D366;
 }
 
-/* iOS Viewport Fixes */
-html {
+/* Base Styles */
+html, body {
   height: 100%;
   width: 100%;
+  margin: 0;
+  padding: 0;
   overflow: hidden;
   position: fixed;
 }
 
 body {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  width: 100%;
-  overflow: hidden;
   touch-action: manipulation;
   -webkit-overflow-scrolling: touch;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .app-container {
@@ -29,7 +29,6 @@ body {
   height: 100vh;
   height: -webkit-fill-available;
   width: 100%;
-  position: relative;
 }
 
 .app-content {
@@ -37,28 +36,26 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding-bottom: var(--input-height);
+  padding-top: var(--header-height);
 }
 
+/* Header Styles */
 header {
   height: var(--header-height);
-  flex-shrink: 0;
-  position: sticky;
-  top: 0;
-  z-index: 999;
   background: #0d6efd;
   color: white;
   display: flex;
   align-items: center;
   padding: 0 1rem;
+  z-index: 1000;
 }
 
+/* Chat Area Styles */
 .chat-main {
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  position: relative;
 }
 
 .messages-container {
@@ -67,26 +64,78 @@ header {
   -webkit-overflow-scrolling: touch;
   padding: 1rem;
   scroll-behavior: smooth;
-  transform: translateZ(0);
+  padding-bottom: 20px;
 }
 
-.input-container {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: #f8f9fa;
-  z-index: 1000;
-  padding-bottom: env(safe-area-inset-bottom);
+/* Message Styles */
+.message {
+  max-width: var(--max-message-width);
+  margin-bottom: 10px;
+  padding: 10px 14px;
+  border-radius: var(--bubble-radius);
+  background: #e9ecef;
+  word-wrap: break-word;
+  position: relative;
 }
 
-.input-form {
+.message.you { 
+  background: #d4f8cb; 
+  margin-left: auto; 
+}
+
+.message.other { 
+  background: #fff; 
+  margin-right: auto; 
+}
+
+.message.has-reply {
+  padding-top: 6px;
+}
+
+/* Reply Styles */
+.message-reply {
+  margin-bottom: 6px;
+}
+
+.reply-indicator {
   display: flex;
-  align-items: center;
-  padding: 0.5rem 1rem;
-  border-top: 1px solid #ccc;
+  margin-bottom: 4px;
 }
 
+.reply-line {
+  width: 4px;
+  background-color: var(--reply-indicator-color);
+  border-radius: 2px;
+  margin-right: 8px;
+}
+
+.reply-content {
+  flex: 1;
+  padding: 6px 8px;
+  background-color: rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.reply-sender {
+  font-weight: bold;
+  font-size: 0.8em;
+  color: var(--reply-indicator-color);
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reply-text {
+  font-size: 0.85em;
+  color: #555;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Reply Preview Bar */
 .reply-preview {
   position: fixed;
   bottom: var(--input-height);
@@ -95,32 +144,166 @@ header {
   z-index: 999;
   background: #f1f1f1;
   border-top: 1px solid #ccc;
-  padding: 0.75rem 1rem;
+  padding: 0.5rem 1rem;
+  display: flex;
+  align-items: center;
 }
 
-/* Rest of your original styles */
-.message {
-  max-width: var(--max-message-width);
-  margin-bottom: 10px;
-  padding: 10px 14px;
-  border-radius: var(--bubble-radius);
-  background: #e9ecef;
-  word-wrap: break-word;
+.reply-preview .reply-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: transparent;
+  padding: 0;
 }
 
-.message.you { background: #d4f8cb; margin-left: auto; }
-.message.other { background: #fff; margin-right: auto; }
-.message.typing .text { display: flex; gap: 4px; margin-top: 4px; }
+.reply-preview .reply-line {
+  height: 36px;
+  margin-right: 10px;
+}
+
+.reply-preview .reply-details {
+  flex: 1;
+  overflow: hidden;
+}
+
+.reply-preview #reply-user {
+  color: var(--reply-indicator-color);
+  margin-right: 6px;
+}
+
+.reply-preview #reply-text {
+  display: inline;
+}
+
+.reply-preview .btn-close {
+  margin-left: 10px;
+  font-size: 0.8em;
+}
+
+/* Input Area Styles */
+.input-container {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #f8f9fa;
+  z-index: 1000;
+  border-top: 1px solid #ccc;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.input-form {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem 1rem;
+}
+
+/* Typing Indicator */
+.message.typing .text { 
+  display: flex; 
+  gap: 4px; 
+  margin-top: 4px; 
+}
+
 .message.typing .dot {
-  width: 8px; height: 8px; background: #999; border-radius: 50%;
+  width: 8px; 
+  height: 8px; 
+  background: #999; 
+  border-radius: 50%;
   animation: bounce 1s infinite ease-in-out;
 }
-@keyframes bounce { 0%,80%,100%{transform:scale(0);}40%{transform:scale(1);} }
 
-body.dark {
-  background: #111; color: #eee;
+@keyframes bounce { 
+  0%,80%,100%{transform:scale(0);}
+  40%{transform:scale(1);} 
 }
-body.dark .message { background: #333; color: #fff; }
-body.dark .message.you { background: #0e5133; }
-body.dark .reply-preview { background: #2a2a2a; color: #ddd; }
-body.dark .input-form { background: #222; border-top: 1px solid #333; }
+
+/* Dark Mode Styles */
+body.dark {
+  background: #111; 
+  color: #eee;
+}
+
+body.dark .message { 
+  background: #333; 
+  color: #fff; 
+}
+
+body.dark .message.you { 
+  background: #0e5133; 
+}
+
+body.dark .reply-preview { 
+  background: #2a2a2a; 
+  border-top-color: #444;
+}
+
+body.dark .input-container { 
+  background: #222; 
+  border-top-color: #333;
+}
+
+body.dark .reply-content {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+body.dark .reply-text {
+  color: #aaa;
+}
+
+/* PWA Specific Styles */
+@media all and (display-mode: standalone) {
+  header {
+    padding-top: env(safe-area-inset-top);
+    height: calc(var(--header-height) + env(safe-area-inset-top));
+  }
+  
+  .app-content {
+    padding-top: calc(var(--header-height) + env(safe-area-inset-top));
+  }
+  
+  .messages-container {
+    padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  }
+}
+
+/* iOS Keyboard Fix */
+body.keyboard-open .messages-container {
+  padding-bottom: 120px;
+}
+/* Remove fixed positioning from header */
+header {
+  position: relative !important;
+  top: auto !important;
+}
+
+/* New input wrapper solution */
+.input-wrapper {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #f8f9fa;
+  z-index: 1000;
+  padding-bottom: env(safe-area-inset-bottom);
+  transition: transform 0.3s ease;
+}
+
+/* Keyboard-open state */
+body.keyboard-open .input-wrapper {
+  transform: translateY(calc(-1 * (100vh - 100%)));
+}
+
+/* Ensure messages container has proper spacing */
+.messages-container {
+  padding-bottom: calc(var(--input-height) + 20px + env(safe-area-inset-bottom));
+}
+
+/* Swipe-to-reply styling */
+.message {
+  transition: transform 0.2s ease;
+}
+.message.swiped {
+  transform: translateX(60px);
+} 
