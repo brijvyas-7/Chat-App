@@ -1,6 +1,7 @@
+/* style.css - Complete Optimized CSS */
 :root {
-  --header-height: 42px; /* Further reduced */
-  --input-height: 44px; /* Reduced */
+  --header-height: 44px;
+  --input-height: 56px;
   --bubble-radius: 8px;
   --max-message-width: 80%;
   --reply-indicator-color: #25D366;
@@ -40,7 +41,7 @@ body.dark {
   color: #e6e6e6;
 }
 
-/* Header - Minimal */
+/* Header */
 header {
   height: calc(var(--header-height) + var(--safe-area-top));
   background-color: var(--whatsapp-green);
@@ -75,54 +76,58 @@ header {
 
 .header-buttons {
   display: flex;
-  gap: 6px; /* Reduced gap */
+  gap: 8px;
 }
 
 .header-btn {
   background: transparent;
   border: none;
   color: white;
-  width: 34px; /* Reduced */
-  height: 34px; /* Reduced */
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px; /* Reduced */
+  font-size: 18px;
   cursor: pointer;
 }
 
-/* Chat Container - No Padding */
+/* Chat Container */
 .chat-container {
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding-top: 0;
-  padding-bottom: 0;
 }
 
-/* Messages Container - Minimal Padding */
+/* Messages Container with Improved Spacing */
 .messages-container {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 0 8px 0; /* No vertical padding */
+  padding: 16px 12px 8px;
   display: flex;
   flex-direction: column;
 }
 
-/* Messages - Ultra Compact */
+/* Welcome Message Special Spacing */
+.message.other.welcome-message {
+  margin-top: 16px;
+  margin-bottom: 20px;
+}
+
+/* Regular Messages */
 .message {
   max-width: var(--max-message-width);
-  margin: 1px 12px 2px; /* Minimal margins */
-  padding: 4px 8px; /* Minimal padding */
+  margin: 8px 12px;
+  padding: 8px 12px;
   border-radius: var(--bubble-radius);
   background: #fff;
   word-wrap: break-word;
   position: relative;
   align-self: flex-start;
-  box-shadow: 0 1px 0.5px rgba(0, 0, 0, 0.05); /* Lighter shadow */
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.08);
 }
 
 body.dark .message {
@@ -140,9 +145,9 @@ body.dark .message.you {
 }
 
 .message .meta {
-  font-size: 11px; /* Smaller font */
+  font-size: 12px;
   color: #667781;
-  margin-bottom: 1px; /* Reduced */
+  margin-bottom: 4px;
   display: flex;
   justify-content: space-between;
 }
@@ -157,16 +162,16 @@ body.dark .message .meta {
 
 .message .text {
   font-size: 16px;
-  line-height: 1.3; /* Tighter line height */
+  line-height: 1.4;
 }
 
-/* Input Area - Ultra Slim */
+/* Input Area */
 .input-container {
   position: relative;
   background: #f0f2f5;
   z-index: 1000;
   border-top: 1px solid #e6e6e6;
-  padding: 4px 12px; /* Minimal padding */
+  padding: 12px 12px calc(12px + var(--safe-area-bottom));
 }
 
 body.dark .input-container {
@@ -179,9 +184,8 @@ body.dark .input-container {
   align-items: center;
   background: #fff;
   border-radius: 24px;
-  padding: 4px 12px; /* Minimal padding */
+  padding: 6px 12px;
   margin: 0;
-  height: 44px; /* Fixed height */
 }
 
 body.dark .input-form {
@@ -193,7 +197,7 @@ body.dark .input-form {
   border: none;
   outline: none;
   background: transparent;
-  padding: 6px 0; /* Reduced */
+  padding: 8px 0;
   font-size: 16px;
   color: #333;
 }
@@ -214,20 +218,20 @@ body.dark .input-form input::placeholder {
   background: transparent;
   border: none;
   color: var(--whatsapp-green);
-  width: 34px; /* Reduced */
-  height: 34px; /* Reduced */
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px; /* Reduced */
+  font-size: 20px;
   cursor: pointer;
 }
 
-/* Typing Indicator - Compact */
+/* Typing Indicator */
 .typing-indicator {
   max-width: var(--max-message-width);
-  margin: 1px 12px 2px; /* Minimal margins */
-  padding: 6px 10px; /* Reduced padding */
+  margin: 8px 12px;
+  padding: 8px 12px;
   border-radius: var(--bubble-radius);
   background: #fff;
   display: flex;
@@ -241,12 +245,12 @@ body.dark .typing-indicator {
 
 .typing-indicator .dots {
   display: flex;
-  margin-right: 6px; /* Reduced */
+  margin-right: 8px;
 }
 
 .typing-indicator .dot {
-  width: 6px; /* Smaller */
-  height: 6px; /* Smaller */
+  width: 8px;
+  height: 8px;
   background: #999;
   border-radius: 50%;
   margin: 0 2px;
@@ -259,7 +263,7 @@ body.dark .typing-indicator .dot {
 
 .typing-indicator .typing-text {
   color: #666;
-  font-size: 13px; /* Smaller font */
+  font-size: 14px;
 }
 
 body.dark .typing-indicator .typing-text {
@@ -274,14 +278,14 @@ body.dark .typing-indicator .typing-text {
   40% { transform: scale(1); }
 }
 
-/* Reply Preview - Compact */
+/* Reply Preview */
 .reply-preview {
   background: #f1f1f1;
-  padding: 4px 10px; /* Reduced */
+  padding: 8px 12px;
   display: flex;
   align-items: center;
-  margin-bottom: 4px; /* Reduced */
-  border-radius: 6px; /* Smaller */
+  margin-bottom: 8px;
+  border-radius: 8px;
 }
 
 body.dark .reply-preview {
@@ -295,11 +299,11 @@ body.dark .reply-preview {
 }
 
 .reply-line {
-  width: 3px; /* Thinner */
-  height: 26px; /* Shorter */
+  width: 4px;
+  height: 36px;
   background: var(--reply-indicator-color);
   border-radius: 2px;
-  margin-right: 8px; /* Reduced */
+  margin-right: 10px;
 }
 
 .reply-details {
@@ -310,15 +314,15 @@ body.dark .reply-preview {
 }
 
 .reply-details strong {
-  font-size: 13px; /* Smaller */
+  font-size: 14px;
   color: var(--reply-indicator-color);
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-bottom: 1px; /* Reduced */
+  margin-bottom: 2px;
 }
 
 .reply-details span {
-  font-size: 13px; /* Smaller */
+  font-size: 14px;
   color: #666;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -333,9 +337,9 @@ body.dark .reply-details span {
   background: transparent;
   border: none;
   color: #666;
-  width: 26px; /* Smaller */
-  height: 26px; /* Smaller */
-  font-size: 14px; /* Smaller */
+  width: 32px;
+  height: 32px;
+  font-size: 18px;
   cursor: pointer;
 }
 
@@ -350,7 +354,7 @@ body.dark .btn-close {
   }
   
   .input-container {
-    padding-bottom: calc(4px + var(--safe-area-bottom)); /* Minimal */
+    padding-bottom: calc(12px + var(--safe-area-bottom));
   }
   
   .chat-container {
@@ -358,7 +362,7 @@ body.dark .btn-close {
   }
 }
 
-/* PWA Specific Fixes - Ultra Compact for iOS */
+/* PWA Specific Fixes */
 @media all and (display-mode: standalone) {
   header {
     padding-top: var(--safe-area-top);
@@ -371,49 +375,19 @@ body.dark .btn-close {
   }
   
   .messages-container {
-    padding: 0 8px 0;
+    padding: 20px 12px 12px;
+  }
+  
+  .message.other.welcome-message {
+    margin-top: 20px;
+    margin-bottom: 24px;
   }
   
   .message, .typing-indicator {
-    margin: 1px 12px 2px; /* Minimal spacing */
-    padding: 4px 8px; /* Minimal padding */
+    margin: 10px 12px;
   }
   
-  /* Tiny spacer at bottom */
-  .messages-container::after {
-    content: '';
-    display: block;
-    height: 2px;
-  }
-  
-  /* Ultra slim input area */
   .input-container {
-    padding: 2px 12px;
-    padding-bottom: calc(2px + var(--safe-area-bottom));
-  }
-  
-  .input-form {
-    padding: 2px 12px;
-    height: 40px; /* Smaller height */
-  }
-  
-  .input-form input {
-    padding: 4px 0; /* Minimal */
-  }
-  
-  /* Reduce header elements */
-  .header-content i {
-    font-size: 18px;
-    margin-right: 10px;
-  }
-  
-  .header-content span {
-    font-size: 16px;
-  }
-  
-  .header-btn {
-    width: 32px;
-    height: 32px;
-    font-size: 15px;
+    padding: 16px 12px calc(16px + var(--safe-area-bottom));
   }
 }
