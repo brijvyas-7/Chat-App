@@ -1,3 +1,4 @@
+// main.js - Complete Optimized Version
 const socket = io();
 const msgInput = document.getElementById('msg');
 const chatMessages = document.getElementById('chat-messages');
@@ -24,62 +25,7 @@ function initDarkMode() {
   icon.classList.toggle('fa-sun', isDark);
 }
 
-// Enhanced keyboard handling
-function setupKeyboardHandling() {
-  let lastHeight = window.innerHeight;
-  
-  const checkKeyboard = () => {
-    const newHeight = window.innerHeight;
-    const keyboardVisible = newHeight < lastHeight - 200;
-    
-    document.body.classList.toggle('keyboard-open', keyboardVisible);
-    if (keyboardVisible) {
-      setTimeout(scrollToBottom, 100);
-    }
-    lastHeight = newHeight;
-  };
-
-  window.addEventListener('resize', checkKeyboard);
-  msgInput.addEventListener('focus', () => setTimeout(checkKeyboard, 300));
-}
-
-// Swipe to reply
-let touchStartX = 0;
-let currentSwipedMessage = null;
-
-function setupSwipeHandler(messageElement) {
-  messageElement.addEventListener('touchstart', (e) => {
-    touchStartX = e.touches[0].clientX;
-    currentSwipedMessage = messageElement;
-  }, { passive: true });
-
-  messageElement.addEventListener('touchmove', (e) => {
-    if (!currentSwipedMessage) return;
-    const diff = e.touches[0].clientX - touchStartX;
-    
-    if (diff > 0 && diff < 100) {
-      e.preventDefault();
-      messageElement.style.transform = `translateX(${diff}px)`;
-    }
-  }, { passive: false });
-
-  messageElement.addEventListener('touchend', (e) => {
-    if (!currentSwipedMessage) return;
-    const diff = e.changedTouches[0].clientX - touchStartX;
-    
-    if (diff > 60) {
-      const msgId = messageElement.id;
-      const username = messageElement.querySelector('.meta strong').textContent;
-      const text = messageElement.querySelector('.text').textContent;
-      setupReply(username, msgId, text);
-    }
-    
-    messageElement.style.transform = '';
-    currentSwipedMessage = null;
-  }, { passive: true });
-}
-
-// Core functions
+// Scroll to bottom of chat
 function scrollToBottom(force = false) {
   const messages = chatMessages;
   const nearBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 200;
@@ -92,7 +38,8 @@ function scrollToBottom(force = false) {
   }
 }
 
-function addMessage({ id: msgID, username: u, text, time, replyTo: r }) {
+// Add message to chat
+function addMessage(msg) {
   // Remove typing indicator if present
   if (typingIndicator) {
     typingIndicator.remove();
@@ -100,18 +47,19 @@ function addMessage({ id: msgID, username: u, text, time, replyTo: r }) {
   }
   
   const div = document.createElement('div');
-  div.className = `message ${u === username ? 'you' : 'other'}`;
-  div.id = msgID;
+  const isWelcomeMsg = msg.username === 'ChatApp Bot' && chatMessages.children.length === 0;
+  div.className = `message ${msg.username === username ? 'you' : 'other'} ${isWelcomeMsg ? 'welcome-message' : ''}`;
+  div.id = msg.id;
 
-  if (r) {
+  if (msg.replyTo) {
     const replyDiv = document.createElement('div');
     replyDiv.className = 'message-reply';
     replyDiv.innerHTML = `
       <div class="reply-indicator">
         <div class="reply-line"></div>
         <div class="reply-content">
-          <div class="reply-sender">${r.username} : </div>
-          <div class="reply-text">${r.text}</div>
+          <div class="reply-sender">${msg.replyTo.username}</div>
+          <div class="reply-text">${msg.replyTo.text}</div>
         </div>
       </div>
     `;
@@ -119,17 +67,15 @@ function addMessage({ id: msgID, username: u, text, time, replyTo: r }) {
   }
 
   div.innerHTML += `
-    <div class="meta"><strong>${u}</strong> @ ${time}</div>
-    <div class="text">${text}</div>
+    <div class="meta"><strong>${msg.username}</strong> @ ${msg.time}</div>
+    <div class="text">${msg.text}</div>
   `;
 
-  setupSwipeHandler(div);
   chatMessages.appendChild(div);
-  
-  // Scroll to bottom after a short delay to ensure DOM is updated
   setTimeout(() => scrollToBottom(true), 50);
 }
 
+// Setup reply functionality
 function setupReply(username, msgID, text) {
   replyTo = { id: msgID, username, text };
   replyUserElem.textContent = username;
@@ -139,14 +85,12 @@ function setupReply(username, msgID, text) {
   if (navigator.vibrate) navigator.vibrate(50);
 }
 
-// Typing indicator functionality
+// Show typing indicator
 function showTypingIndicator(username) {
-  // Remove existing indicator
   if (typingIndicator) {
     typingIndicator.remove();
   }
   
-  // Create new indicator
   typingIndicator = document.createElement('div');
   typingIndicator.className = 'message typing-indicator other';
   typingIndicator.innerHTML = `
@@ -158,13 +102,11 @@ function showTypingIndicator(username) {
     <span class="typing-text">${username} is typing...</span>
   `;
   
-  // Add to messages container as last element
   chatMessages.appendChild(typingIndicator);
-  
-  // Scroll to show the typing indicator
   scrollToBottom(true);
 }
 
+// Hide typing indicator
 function hideTypingIndicator() {
   if (typingIndicator) {
     typingIndicator.remove();
@@ -172,7 +114,7 @@ function hideTypingIndicator() {
   }
 }
 
-// Event listeners
+// Event Listeners
 document.getElementById('chat-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const txt = msgInput.value.trim();
@@ -224,7 +166,6 @@ muteBtn.addEventListener('click', () => {
 let typingTimeout;
 msgInput.addEventListener('input', () => {
   const now = Date.now();
-  // Throttle typing events to max 1 per second
   if (now - lastTypingUpdate > 1000) {
     socket.emit('typing');
     lastTypingUpdate = now;
@@ -238,16 +179,46 @@ msgInput.addEventListener('input', () => {
 
 // Initialize
 initDarkMode();
-setupKeyboardHandling();
 scrollToBottom(true);
 
-// Socket.io handlers
+// Socket.io Event Handlers
+socket.on('connect', () => {
+  socket.emit('joinRoom', { username, room });
+});
+
+socket.on('welcomeMessage', (msg) => {
+  addMessage({
+    id: 'welcome-msg-' + Date.now(),
+    username: 'ChatApp Bot',
+    text: msg.text,
+    time: msg.time
+  });
+});
+
 socket.on('message', (msg) => {
   if (msg.username !== username && msg.username !== 'ChatApp Bot' && !isMuted) {
     notificationSound.play().catch(() => {});
   }
   addMessage(msg);
   hideTypingIndicator();
+});
+
+socket.on('userJoined', (msg) => {
+  addMessage({
+    id: 'system-msg-' + Date.now(),
+    username: 'ChatApp Bot',
+    text: `${msg.username} has joined the chat`,
+    time: msg.time
+  });
+});
+
+socket.on('userLeft', (msg) => {
+  addMessage({
+    id: 'system-msg-' + Date.now(),
+    username: 'ChatApp Bot',
+    text: `${msg.username} has left the chat`,
+    time: msg.time
+  });
 });
 
 socket.on('showTyping', ({ username: u }) => {
@@ -266,13 +237,19 @@ socket.on('stopTyping', ({ username: u }) => {
   }
 });
 
-socket.on('connect', () => {
-  socket.emit('joinRoom', { username, room });
-});
-
-// iOS-specific header fix
+// iOS-specific fixes
 if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
   window.addEventListener('resize', () => {
     document.querySelector('header').style.position = 'sticky';
+  });
+  
+  // Keyboard handling for iOS
+  let lastHeight = window.innerHeight;
+  window.addEventListener('resize', () => {
+    const newHeight = window.innerHeight;
+    if (newHeight < lastHeight) {
+      setTimeout(scrollToBottom, 100);
+    }
+    lastHeight = newHeight;
   });
 }
