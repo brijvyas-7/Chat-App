@@ -13,6 +13,7 @@ const { username, room } = Qs.parse(location.search, { ignoreQueryPrefix: true }
 let replyTo = null, isMuted = localStorage.getItem('isMuted') === 'true';
 const typingUsers = new Set();
 let typingIndicator = null;
+let lastTypingUpdate = 0;
 
 // Initialize dark mode
 function initDarkMode() {
@@ -109,7 +110,7 @@ function addMessage({ id: msgID, username: u, text, time, replyTo: r }) {
       <div class="reply-indicator">
         <div class="reply-line"></div>
         <div class="reply-content">
-          <div class="reply-sender">${r.username}</div>
+          <div class="reply-sender">${r.username} : </div>
           <div class="reply-text">${r.text}</div>
         </div>
       </div>
@@ -222,7 +223,13 @@ muteBtn.addEventListener('click', () => {
 // Typing detection
 let typingTimeout;
 msgInput.addEventListener('input', () => {
-  socket.emit('typing');
+  const now = Date.now();
+  // Throttle typing events to max 1 per second
+  if (now - lastTypingUpdate > 1000) {
+    socket.emit('typing');
+    lastTypingUpdate = now;
+  }
+  
   clearTimeout(typingTimeout);
   typingTimeout = setTimeout(() => {
     socket.emit('stopTyping');
