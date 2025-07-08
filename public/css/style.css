@@ -14,6 +14,7 @@ html, body {
   padding: 0;
   overflow: hidden;
   position: fixed;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
@@ -23,34 +24,29 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-.app-container {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  height: -webkit-fill-available;
-  width: 100%;
-}
-
-.app-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding-top: var(--header-height);
-}
-
-/* Header Styles */
+/* Header */
 header {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
   height: var(--header-height);
   background: #0d6efd;
   color: white;
+  z-index: 1000;
   display: flex;
   align-items: center;
   padding: 0 1rem;
-  z-index: 1000;
+  padding-top: env(safe-area-inset-top);
 }
 
-/* Chat Area Styles */
+/* Main Layout */
+.app-container {
+  height: calc(100vh - var(--header-height) - env(safe-area-inset-top));
+  display: flex;
+  flex-direction: column;
+}
+
 .chat-main {
   flex: 1;
   display: flex;
@@ -58,227 +54,78 @@ header {
   overflow: hidden;
 }
 
+/* Messages */
 .messages-container {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 1rem;
+  padding: 12px 16px;
+  padding-bottom: 80px; /* Extra padding to prevent overlap */
   scroll-behavior: smooth;
-  padding-bottom: 20px;
 }
 
-/* Message Styles */
 .message {
   max-width: var(--max-message-width);
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   padding: 10px 14px;
   border-radius: var(--bubble-radius);
   background: #e9ecef;
   word-wrap: break-word;
-  position: relative;
+  transition: transform 0.2s ease;
 }
 
-.message.you { 
-  background: #d4f8cb; 
-  margin-left: auto; 
+.message.you {
+  background: #d4f8cb;
+  margin-left: auto;
 }
 
-.message.other { 
-  background: #fff; 
-  margin-right: auto; 
+.message.other {
+  background: white;
+  margin-right: auto;
 }
 
-.message.has-reply {
-  padding-top: 6px;
+.message.swiped {
+  transform: translateX(60px);
 }
 
-/* Reply Styles */
-.message-reply {
-  margin-bottom: 6px;
-}
-
-.reply-indicator {
+/* Typing Indicator - Below last message */
+.typing-indicator {
+  max-width: var(--max-message-width);
+  margin-bottom: 8px;
+  padding: 10px 14px;
+  border-radius: var(--bubble-radius);
+  background: #e9ecef;
   display: flex;
-  margin-bottom: 4px;
+  align-items: center;
 }
 
-.reply-line {
-  width: 4px;
-  background-color: var(--reply-indicator-color);
-  border-radius: 2px;
+body.dark .typing-indicator {
+  background: #333;
+}
+
+.typing-indicator .dots {
+  display: flex;
   margin-right: 8px;
 }
 
-.reply-content {
-  flex: 1;
-  padding: 6px 8px;
-  background-color: rgba(0, 0, 0, 0.05);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.reply-sender {
-  font-weight: bold;
-  font-size: 0.8em;
-  color: var(--reply-indicator-color);
-  margin-bottom: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.reply-text {
-  font-size: 0.85em;
-  color: #555;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Reply Preview Bar */
-.reply-preview {
-  position: fixed;
-  bottom: var(--input-height);
-  left: 0;
-  right: 0;
-  z-index: 999;
-  background: #f1f1f1;
-  border-top: 1px solid #ccc;
-  padding: 0.5rem 1rem;
-  display: flex;
-  align-items: center;
-}
-
-.reply-preview .reply-content {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  background: transparent;
-  padding: 0;
-}
-
-.reply-preview .reply-line {
-  height: 36px;
-  margin-right: 10px;
-}
-
-.reply-preview .reply-details {
-  flex: 1;
-  overflow: hidden;
-}
-
-.reply-preview #reply-user {
-  color: var(--reply-indicator-color);
-  margin-right: 6px;
-}
-
-.reply-preview #reply-text {
-  display: inline;
-}
-
-.reply-preview .btn-close {
-  margin-left: 10px;
-  font-size: 0.8em;
-}
-
-/* Input Area Styles */
-.input-container {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: #f8f9fa;
-  z-index: 1000;
-  border-top: 1px solid #ccc;
-  padding-bottom: env(safe-area-inset-bottom);
-}
-
-.input-form {
-  display: flex;
-  align-items: center;
-  padding: 0.5rem 1rem;
-}
-
-/* Typing Indicator */
-.message.typing .text { 
-  display: flex; 
-  gap: 4px; 
-  margin-top: 4px; 
-}
-
-.message.typing .dot {
-  width: 8px; 
-  height: 8px; 
-  background: #999; 
+.typing-indicator .dot {
+  width: 8px;
+  height: 8px;
+  background: #999;
   border-radius: 50%;
-  animation: bounce 1s infinite ease-in-out;
+  margin: 0 2px;
+  animation: bounce 1.4s infinite ease-in-out both;
 }
 
-@keyframes bounce { 
-  0%,80%,100%{transform:scale(0);}
-  40%{transform:scale(1);} 
+.typing-indicator .dot:nth-child(1) { animation-delay: -0.32s; }
+.typing-indicator .dot:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1); }
 }
 
-/* Dark Mode Styles */
-body.dark {
-  background: #111; 
-  color: #eee;
-}
-
-body.dark .message { 
-  background: #333; 
-  color: #fff; 
-}
-
-body.dark .message.you { 
-  background: #0e5133; 
-}
-
-body.dark .reply-preview { 
-  background: #2a2a2a; 
-  border-top-color: #444;
-}
-
-body.dark .input-container { 
-  background: #222; 
-  border-top-color: #333;
-}
-
-body.dark .reply-content {
-  background-color: rgba(255, 255, 255, 0.08);
-}
-
-body.dark .reply-text {
-  color: #aaa;
-}
-
-/* PWA Specific Styles */
-@media all and (display-mode: standalone) {
-  header {
-    padding-top: env(safe-area-inset-top);
-    height: calc(var(--header-height) + env(safe-area-inset-top));
-  }
-  
-  .app-content {
-    padding-top: calc(var(--header-height) + env(safe-area-inset-top));
-  }
-  
-  .messages-container {
-    padding-bottom: calc(20px + env(safe-area-inset-bottom));
-  }
-}
-
-/* iOS Keyboard Fix */
-body.keyboard-open .messages-container {
-  padding-bottom: 120px;
-}
-/* Remove fixed positioning from header */
-header {
-  position: relative !important;
-  top: auto !important;
-}
-
-/* New input wrapper solution */
+/* Input Area */
 .input-wrapper {
   position: fixed;
   bottom: 0;
@@ -287,23 +134,124 @@ header {
   background: #f8f9fa;
   z-index: 1000;
   padding-bottom: env(safe-area-inset-bottom);
-  transition: transform 0.3s ease;
+  border-top: 1px solid #ddd;
 }
 
-/* Keyboard-open state */
-body.keyboard-open .input-wrapper {
-  transform: translateY(calc(-1 * (100vh - 100%)));
+.input-form {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
 }
 
-/* Ensure messages container has proper spacing */
-.messages-container {
-  padding-bottom: calc(var(--input-height) + 20px + env(safe-area-inset-bottom));
+/* Reply Preview */
+.reply-preview {
+  background: #f1f1f1;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
 }
 
-/* Swipe-to-reply styling */
-.message {
-  transition: transform 0.2s ease;
+.reply-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
 }
-.message.swiped {
-  transform: translateX(60px);
-} 
+
+.reply-line {
+  width: 4px;
+  height: 36px;
+  background: var(--reply-indicator-color);
+  border-radius: 2px;
+  margin-right: 10px;
+}
+
+/* Dark Mode */
+body.dark {
+  background: #111 !important;
+  color: #eee !important;
+}
+
+body.dark .message {
+  background: #333 !important;
+  color: #fff !important;
+}
+
+body.dark .message.you {
+  background: #0e5133 !important;
+}
+
+body.dark .input-wrapper {
+  background: #222 !important;
+  border-top-color: #444 !important;
+}
+
+body.dark .reply-preview {
+  background: #2a2a2a !important;
+}
+
+/* iOS Keyboard Fixes */
+@supports (-webkit-touch-callout: none) {
+  body.keyboard-open {
+    position: fixed;
+    height: 100vh !important;
+  }
+  
+  body.keyboard-open .messages-container {
+    padding-bottom: 280px !important;
+  }
+  
+  body.keyboard-open header {
+    position: sticky;
+    top: env(safe-area-inset-top);
+  }
+}
+
+/* Android Fixes */
+@supports not (-webkit-touch-callout: none) {
+  body.keyboard-open .messages-container {
+    padding-bottom: 200px;
+  }
+}
+/* ===== PWA HEADER FIXES ===== */
+@media all and (display-mode: standalone) {
+  /* Fix for notch area in iOS PWA */
+  header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: calc(var(--header-height) + env(safe-area-inset-top));
+    padding-top: env(safe-area-inset-top);
+    z-index: 1000;
+  }
+  
+  /* Adjust main container position */
+  .app-container {
+    margin-top: calc(var(--header-height) + env(safe-area-inset-top));
+    height: calc(100vh - var(--header-height) - env(safe-area-inset-top));
+  }
+  
+  /* Prevent header from disappearing when keyboard opens */
+  body.keyboard-open header {
+    position: fixed;
+    top: env(safe-area-inset-top);
+  }
+  
+  /* Fix for white space below header */
+  body.keyboard-open .app-container {
+    height: calc(100vh - var(--header-height) - env(safe-area-inset-top) - 50px);
+  }
+  
+  /* Extra padding for messages container in PWA */
+  .messages-container {
+    padding-bottom: calc(var(--input-height) + 30px + env(safe-area-inset-bottom));
+  }
+  
+  /* Ensure typing indicator stays in messages area */
+  .typing-indicator {
+    position: relative;
+    bottom: auto;
+    left: auto;
+    margin-bottom: 8px;
+  }
+}
