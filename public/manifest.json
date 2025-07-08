@@ -3,6 +3,7 @@
   "short_name": "ChatApp",
   "start_url": "/",
   "display": "standalone",
+  "viewport-fit": "cover",
   "background_color": "#ffffff",
   "theme_color": "#0d6efd",
   "orientation": "portrait",
