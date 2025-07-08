@@ -1,4 +1,4 @@
-// main.js - Complete Optimized Version
+// main.js - Complete Version with All Features
 const socket = io();
 const msgInput = document.getElementById('msg');
 const chatMessages = document.getElementById('chat-messages');
@@ -38,7 +38,43 @@ function scrollToBottom(force = false) {
   }
 }
 
-// Add message to chat
+// Swipe to reply functionality
+let touchStartX = 0;
+let currentSwipedMessage = null;
+
+function setupSwipeHandler(messageElement) {
+  messageElement.addEventListener('touchstart', (e) => {
+    touchStartX = e.touches[0].clientX;
+    currentSwipedMessage = messageElement;
+  }, { passive: true });
+
+  messageElement.addEventListener('touchmove', (e) => {
+    if (!currentSwipedMessage) return;
+    const diff = e.touches[0].clientX - touchStartX;
+    
+    if (diff > 0 && diff < 100) {
+      e.preventDefault();
+      messageElement.style.transform = `translateX(${diff}px)`;
+    }
+  }, { passive: false });
+
+  messageElement.addEventListener('touchend', (e) => {
+    if (!currentSwipedMessage) return;
+    const diff = e.changedTouches[0].clientX - touchStartX;
+    
+    if (diff > 60) {
+      const msgId = messageElement.id;
+      const username = messageElement.querySelector('.meta strong').textContent;
+      const text = messageElement.querySelector('.text').textContent;
+      setupReply(username, msgId, text);
+    }
+    
+    messageElement.style.transform = '';
+    currentSwipedMessage = null;
+  }, { passive: true });
+}
+
+// Add message to chat with swipe functionality
 function addMessage(msg) {
   // Remove typing indicator if present
   if (typingIndicator) {
@@ -71,6 +107,9 @@ function addMessage(msg) {
     <div class="text">${msg.text}</div>
   `;
 
+  // Add swipe handler to the new message
+  setupSwipeHandler(div);
+  
   chatMessages.appendChild(div);
   setTimeout(() => scrollToBottom(true), 50);
 }
@@ -112,6 +151,25 @@ function hideTypingIndicator() {
     typingIndicator.remove();
     typingIndicator = null;
   }
+}
+
+// Keyboard handling for iOS
+function setupKeyboardHandling() {
+  let lastHeight = window.innerHeight;
+  
+  const checkKeyboard = () => {
+    const newHeight = window.innerHeight;
+    const keyboardVisible = newHeight < lastHeight - 200;
+    
+    document.body.classList.toggle('keyboard-open', keyboardVisible);
+    if (keyboardVisible) {
+      setTimeout(scrollToBottom, 100);
+    }
+    lastHeight = newHeight;
+  };
+
+  window.addEventListener('resize', checkKeyboard);
+  msgInput.addEventListener('focus', () => setTimeout(checkKeyboard, 300));
 }
 
 // Event Listeners
@@ -179,6 +237,7 @@ msgInput.addEventListener('input', () => {
 
 // Initialize
 initDarkMode();
+setupKeyboardHandling();
 scrollToBottom(true);
 
 // Socket.io Event Handlers
@@ -241,15 +300,5 @@ socket.on('stopTyping', ({ username: u }) => {
 if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
   window.addEventListener('resize', () => {
     document.querySelector('header').style.position = 'sticky';
-  });
-  
-  // Keyboard handling for iOS
-  let lastHeight = window.innerHeight;
-  window.addEventListener('resize', () => {
-    const newHeight = window.innerHeight;
-    if (newHeight < lastHeight) {
-      setTimeout(scrollToBottom, 100);
-    }
-    lastHeight = newHeight;
   });
 }
