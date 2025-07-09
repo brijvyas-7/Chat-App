@@ -1,4 +1,4 @@
-// main.js - Complete Version with All Features
+// main.js - Complete Working Version
 const socket = io();
 const msgInput = document.getElementById('msg');
 const chatMessages = document.getElementById('chat-messages');
@@ -9,12 +9,16 @@ const cancelReplyBtn = document.getElementById('cancel-reply');
 const themeBtn = document.getElementById('theme-toggle');
 const muteBtn = document.getElementById('mute-toggle');
 const notificationSound = new Audio('/sounds/notification.mp3');
+const roomNameElem = document.getElementById('room-name');
 
 const { username, room } = Qs.parse(location.search, { ignoreQueryPrefix: true });
 let replyTo = null, isMuted = localStorage.getItem('isMuted') === 'true';
 const typingUsers = new Set();
 let typingIndicator = null;
 let lastTypingUpdate = 0;
+
+// Set room name in header
+roomNameElem.textContent = room;
 
 // Initialize dark mode
 function initDarkMode() {
@@ -36,6 +40,7 @@ function scrollToBottom(force = false) {
       behavior: 'smooth'
     });
   }
+  markMessagesAsSeen();
 }
 
 // Swipe to reply functionality
@@ -74,9 +79,8 @@ function setupSwipeHandler(messageElement) {
   }, { passive: true });
 }
 
-// Add message to chat with swipe functionality
+// Add message to chat
 function addMessage(msg) {
-  // Remove typing indicator if present
   if (typingIndicator) {
     typingIndicator.remove();
     typingIndicator = null;
@@ -87,29 +91,56 @@ function addMessage(msg) {
   div.className = `message ${msg.username === username ? 'you' : 'other'} ${isWelcomeMsg ? 'welcome-message' : ''}`;
   div.id = msg.id;
 
+  let messageContent = '';
+  
+  // Add reply preview if exists
   if (msg.replyTo) {
-    const replyDiv = document.createElement('div');
-    replyDiv.className = 'message-reply';
-    replyDiv.innerHTML = `
-      <div class="reply-indicator">
-        <div class="reply-line"></div>
-        <div class="reply-content">
-          <div class="reply-sender">${msg.replyTo.username}</div>
-          <div class="reply-text">${msg.replyTo.text}</div>
+    messageContent += `
+      <div class="message-reply">
+        <div class="reply-indicator">
+          <div class="reply-line"></div>
+          <div class="reply-content">
+            <div class="reply-sender">${msg.replyTo.username} :&nbsp;</div>
+            <div class="reply-text">${msg.replyTo.text}</div>
+          </div>
         </div>
       </div>
     `;
-    div.appendChild(replyDiv);
   }
 
-  div.innerHTML += `
+  // Add main message content
+  messageContent += `
     <div class="meta"><strong>${msg.username}</strong> @ ${msg.time}</div>
     <div class="text">${msg.text}</div>
   `;
 
-  // Add swipe handler to the new message
+  // Add seen status for your messages
+  if (msg.username === username) {
+    let seenStatus = '';
+    if (msg.seenBy && msg.seenBy.length > 0) {
+      const seenNames = msg.seenBy.map(u => u === username ? 'You' : u).join(', ');
+      seenStatus = `
+        <div class="message-status">
+          <span class="time">${msg.time}</span>
+          <span class="seen">
+            <span class="seen-icon">✔✔</span>
+            <span class="seen-users" title="Seen by ${seenNames}">${seenNames}</span>
+          </span>
+        </div>
+      `;
+    } else {
+      seenStatus = `
+        <div class="message-status">
+          <span class="time">${msg.time}</span>
+          <span class="seen-icon">✔</span>
+        </div>
+      `;
+    }
+    messageContent += seenStatus;
+  }
+
+  div.innerHTML = messageContent;
   setupSwipeHandler(div);
-  
   chatMessages.appendChild(div);
   setTimeout(() => scrollToBottom(true), 50);
 }
@@ -118,7 +149,7 @@ function addMessage(msg) {
 function setupReply(username, msgID, text) {
   replyTo = { id: msgID, username, text };
   replyUserElem.textContent = username;
-  replyTextElem.textContent = text.length > 30 ? text.substring(0, 30) + '...' : text;
+  replyTextElem.textContent = text;
   replyPreview.classList.remove('d-none');
   msgInput.focus();
   if (navigator.vibrate) navigator.vibrate(50);
@@ -153,23 +184,33 @@ function hideTypingIndicator() {
   }
 }
 
-// Keyboard handling for iOS
+// Mark messages as seen
+function markMessagesAsSeen() {
+  const messages = Array.from(chatMessages.querySelectorAll('.message.you'))
+    .map(el => el.id)
+    .filter(id => id);
+    
+  if (messages.length > 0) {
+    socket.emit('markAsSeen', { 
+      messageIds: messages,
+      room: room 
+    });
+  }
+}
+
+// Keyboard handling
 function setupKeyboardHandling() {
   let lastHeight = window.innerHeight;
   
-  const checkKeyboard = () => {
+  window.addEventListener('resize', () => {
     const newHeight = window.innerHeight;
-    const keyboardVisible = newHeight < lastHeight - 200;
-    
-    document.body.classList.toggle('keyboard-open', keyboardVisible);
-    if (keyboardVisible) {
+    if (newHeight < lastHeight) {
       setTimeout(scrollToBottom, 100);
     }
     lastHeight = newHeight;
-  };
+  });
 
-  window.addEventListener('resize', checkKeyboard);
-  msgInput.addEventListener('focus', () => setTimeout(checkKeyboard, 300));
+  msgInput.addEventListener('focus', () => setTimeout(scrollToBottom, 300));
 }
 
 // Event Listeners
@@ -184,7 +225,8 @@ document.getElementById('chat-form').addEventListener('submit', (e) => {
       id: replyTo.id, 
       username: replyTo.username, 
       text: replyTo.text 
-    } : null 
+    } : null,
+    room: room
   });
   
   msgInput.value = '';
@@ -225,14 +267,21 @@ let typingTimeout;
 msgInput.addEventListener('input', () => {
   const now = Date.now();
   if (now - lastTypingUpdate > 1000) {
-    socket.emit('typing');
+    socket.emit('typing', { room });
     lastTypingUpdate = now;
   }
   
   clearTimeout(typingTimeout);
   typingTimeout = setTimeout(() => {
-    socket.emit('stopTyping');
+    socket.emit('stopTyping', { room });
   }, 2000);
+});
+
+// Visibility change handler
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    markMessagesAsSeen();
+  }
 });
 
 // Initialize
@@ -243,15 +292,6 @@ scrollToBottom(true);
 // Socket.io Event Handlers
 socket.on('connect', () => {
   socket.emit('joinRoom', { username, room });
-});
-
-socket.on('welcomeMessage', (msg) => {
-  addMessage({
-    id: 'welcome-msg-' + Date.now(),
-    username: 'ChatApp Bot',
-    text: msg.text,
-    time: msg.time
-  });
 });
 
 socket.on('message', (msg) => {
@@ -294,6 +334,26 @@ socket.on('stopTyping', ({ username: u }) => {
   } else {
     showTypingIndicator([...typingUsers][typingUsers.size - 1]);
   }
+});
+
+socket.on('messagesSeen', (updates) => {
+  updates.forEach(update => {
+    const message = document.getElementById(update.messageId);
+    if (message) {
+      const seenUsersEl = message.querySelector('.seen-users');
+      if (seenUsersEl) {
+        const seenNames = update.seenBy.map(u => u === username ? 'You' : u).join(', ');
+        seenUsersEl.textContent = seenNames;
+        seenUsersEl.title = `Seen by ${seenNames}`;
+      } else {
+        const seenEl = message.querySelector('.seen');
+        if (seenEl) {
+          const seenNames = update.seenBy.map(u => u === username ? 'You' : u).join(', ');
+          seenEl.innerHTML += `<span class="seen-users" title="Seen by ${seenNames}">${seenNames}</span>`;
+        }
+      }
+    }
+  });
 });
 
 // iOS-specific fixes
