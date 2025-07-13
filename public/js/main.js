@@ -1,4 +1,3 @@
-// main.js - Complete Working Version
 const socket = io();
 const msgInput = document.getElementById('msg');
 const chatMessages = document.getElementById('chat-messages');
@@ -12,10 +11,12 @@ const notificationSound = new Audio('/sounds/notification.mp3');
 const roomNameElem = document.getElementById('room-name');
 
 const { username, room } = Qs.parse(location.search, { ignoreQueryPrefix: true });
-let replyTo = null, isMuted = localStorage.getItem('isMuted') === 'true';
+let replyTo = null, isMuted = localStorage.getItem('isMuted') !== 'true';
 const typingUsers = new Set();
 let typingIndicator = null;
 let lastTypingUpdate = 0;
+let touchStartX = 0;
+const SWIPE_THRESHOLD = 60;
 
 // Set room name in header
 roomNameElem.textContent = room;
@@ -27,6 +28,12 @@ function initDarkMode() {
   const icon = themeBtn.querySelector('i');
   icon.classList.toggle('fa-moon', !isDark);
   icon.classList.toggle('fa-sun', isDark);
+  
+  // Set dark mode background
+  if (isDark) {
+    document.querySelector('.chat-container').style.backgroundColor = 'var(--terminal-bg)';
+    document.querySelector('.messages-container').style.backgroundColor = 'var(--terminal-bg)';
+  }
 }
 
 // Scroll to bottom of chat
@@ -44,39 +51,39 @@ function scrollToBottom(force = false) {
 }
 
 // Swipe to reply functionality
-let touchStartX = 0;
-let currentSwipedMessage = null;
-
 function setupSwipeHandler(messageElement) {
   messageElement.addEventListener('touchstart', (e) => {
     touchStartX = e.touches[0].clientX;
-    currentSwipedMessage = messageElement;
   }, { passive: true });
 
   messageElement.addEventListener('touchmove', (e) => {
-    if (!currentSwipedMessage) return;
-    const diff = e.touches[0].clientX - touchStartX;
-    
-    if (diff > 0 && diff < 100) {
+    const diffX = e.touches[0].clientX - touchStartX;
+    if (diffX > 0 && diffX < 100) {
       e.preventDefault();
-      messageElement.style.transform = `translateX(${diff}px)`;
+      messageElement.style.transform = `translateX(${diffX}px)`;
     }
   }, { passive: false });
 
   messageElement.addEventListener('touchend', (e) => {
-    if (!currentSwipedMessage) return;
-    const diff = e.changedTouches[0].clientX - touchStartX;
-    
-    if (diff > 60) {
+    const diffX = e.changedTouches[0].clientX - touchStartX;
+    if (diffX > SWIPE_THRESHOLD) {
       const msgId = messageElement.id;
       const username = messageElement.querySelector('.meta strong').textContent;
       const text = messageElement.querySelector('.text').textContent;
       setupReply(username, msgId, text);
     }
-    
     messageElement.style.transform = '';
-    currentSwipedMessage = null;
   }, { passive: true });
+}
+
+// Initialize message handlers
+function initMessageHandlers() {
+  const messages = document.querySelectorAll('.message:not(.system)');
+  messages.forEach(msg => {
+    if (!document.body.classList.contains('dark')) {
+      setupSwipeHandler(msg);
+    }
+  });
 }
 
 // Add message to chat
@@ -87,60 +94,84 @@ function addMessage(msg) {
   }
   
   const div = document.createElement('div');
-  const isWelcomeMsg = msg.username === 'ChatApp Bot' && chatMessages.children.length === 0;
-  div.className = `message ${msg.username === username ? 'you' : 'other'} ${isWelcomeMsg ? 'welcome-message' : ''}`;
+  const isSystemMsg = msg.username === 'ChatApp Bot';
+  div.className = `message ${msg.username === username ? 'you' : 'other'} ${isSystemMsg ? 'system' : ''}`;
   div.id = msg.id;
 
+  const isDark = document.body.classList.contains('dark');
   let messageContent = '';
-  
+
   // Add reply preview if exists
   if (msg.replyTo) {
-    messageContent += `
-      <div class="message-reply">
-        <div class="reply-indicator">
-          <div class="reply-line"></div>
-          <div class="reply-content">
-            <div class="reply-sender">${msg.replyTo.username} :&nbsp;</div>
-            <div class="reply-text">${msg.replyTo.text}</div>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  // Add main message content
-  messageContent += `
-    <div class="meta"><strong>${msg.username}</strong> @ ${msg.time}</div>
-    <div class="text">${msg.text}</div>
-  `;
-
-  // Add seen status for your messages
-  if (msg.username === username) {
-    let seenStatus = '';
-    if (msg.seenBy && msg.seenBy.length > 0) {
-      const seenNames = msg.seenBy.map(u => u === username ? 'You' : u).join(', ');
-      seenStatus = `
-        <div class="message-status">
-          <span class="time">${msg.time}</span>
-          <span class="seen">
-            <span class="seen-icon">✔✔</span>
-            <span class="seen-users" title="Seen by ${seenNames}">${seenNames}</span>
-          </span>
+    if (isDark) {
+      // Terminal-style reply indicator
+      messageContent += `
+        <div class="message-reply">
+          <span class="reply-sender">${msg.replyTo.username}</span>
+          <span class="reply-text">${msg.replyTo.text}</span>
         </div>
       `;
     } else {
-      seenStatus = `
-        <div class="message-status">
-          <span class="time">${msg.time}</span>
-          <span class="seen-icon">✔</span>
+      // WhatsApp-style reply indicator
+      messageContent += `
+        <div class="message-reply">
+          <span class="reply-sender">${msg.replyTo.username}</span>
+          <span class="reply-text">${msg.replyTo.text}</span>
         </div>
       `;
     }
-    messageContent += seenStatus;
+  }
+
+  if (isDark) {
+    // Terminal-style message format
+    messageContent += `
+      <div class="meta">
+        <span class="prompt-sign">${msg.username === username ? '>' : '$'}</span>
+        <strong>${msg.username}</strong>
+        <span class="message-time">${msg.time} :</span>
+      </div>
+      <div class="text">${msg.text}</div>
+    `;
+    
+    if (msg.username === username) {
+      const seenNames = msg.seenBy?.length > 0 
+        ? msg.seenBy.map(u => u === username ? 'You' : u).join(', ')
+        : '';
+      
+      messageContent += `
+        <div class="message-status">
+          <span class="seen-icon">${seenNames ? '✓✓' : '✓'}</span>
+          ${seenNames ? `<span class="seen-users">${seenNames}</span>` : ''}
+        </div>
+      `;
+    }
+  } else {
+    // WhatsApp-style format
+    messageContent += `
+      <div class="meta"><strong>${msg.username}</strong> <span class="message-time">${msg.time}</span></div>
+      <div class="text">${msg.text}</div>
+    `;
+    
+    if (msg.username === username) {
+      const seenNames = msg.seenBy?.length > 0 
+        ? msg.seenBy.map(u => u === username ? 'You' : u).join(', ')
+        : '';
+      
+      messageContent += `
+        <div class="message-status">
+          <span class="seen-icon">${seenNames ? '✓✓' : '✓'}</span>
+          ${seenNames ? `<span class="seen-users">${seenNames}</span>` : ''}
+        </div>
+      `;
+    }
   }
 
   div.innerHTML = messageContent;
-  setupSwipeHandler(div);
+  
+  if (!isDark) {
+    setupSwipeHandler(div);
+  }
+  
   chatMessages.appendChild(div);
   setTimeout(() => scrollToBottom(true), 50);
 }
@@ -152,25 +183,47 @@ function setupReply(username, msgID, text) {
   replyTextElem.textContent = text;
   replyPreview.classList.remove('d-none');
   msgInput.focus();
-  if (navigator.vibrate) navigator.vibrate(50);
+  
+  // Vibration feedback
+  try {
+    if (navigator.vibrate) navigator.vibrate(50);
+  } catch (e) {
+    console.log("Vibration not supported");
+  }
+  
+  // Scroll to input
+  setTimeout(() => {
+    document.querySelector('.input-container').scrollIntoView({ behavior: 'smooth' });
+  }, 100);
 }
 
 // Show typing indicator
 function showTypingIndicator(username) {
   if (typingIndicator) {
     typingIndicator.remove();
+    typingIndicator = null;
   }
   
+  const isDark = document.body.classList.contains('dark');
   typingIndicator = document.createElement('div');
-  typingIndicator.className = 'message typing-indicator other';
-  typingIndicator.innerHTML = `
-    <div class="dots">
-      <span class="dot"></span>
-      <span class="dot"></span>
-      <span class="dot"></span>
-    </div>
-    <span class="typing-text">${username} is typing...</span>
-  `;
+  typingIndicator.className = 'typing-indicator';
+  
+  if (isDark) {
+    typingIndicator.innerHTML = `
+      <span class="prompt-sign">$</span>
+      <span class="typing-text">${username} is typing...</span>
+    `;
+  } else {
+    typingIndicator.className += ' other';
+    typingIndicator.innerHTML = `
+      <div class="dots">
+        <span class="dot"></span>
+        <span class="dot"></span>
+        <span class="dot"></span>
+      </div>
+      <span class="typing-text">${username} is typing...</span>
+    `;
+  }
   
   chatMessages.appendChild(typingIndicator);
   scrollToBottom(true);
@@ -213,6 +266,15 @@ function setupKeyboardHandling() {
   msgInput.addEventListener('focus', () => setTimeout(scrollToBottom, 300));
 }
 
+// Fix input box width
+function fixInputBox() {
+  const inputForm = document.querySelector('.input-form');
+  if (!document.body.classList.contains('dark')) {
+    inputForm.style.maxWidth = '100%';
+    inputForm.style.width = '100%';
+  }
+}
+
 // Event Listeners
 document.getElementById('chat-form').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -247,19 +309,26 @@ themeBtn.addEventListener('click', () => {
   const icon = themeBtn.querySelector('i');
   icon.classList.toggle('fa-moon', !isDark);
   icon.classList.toggle('fa-sun', isDark);
+  
+  // Update background colors for dark mode
+  if (isDark) {
+    document.querySelector('.chat-container').style.backgroundColor = 'var(--terminal-bg)';
+    document.querySelector('.messages-container').style.backgroundColor = 'var(--terminal-bg)';
+  } else {
+    document.querySelector('.chat-container').style.backgroundColor = '';
+    document.querySelector('.messages-container').style.backgroundColor = '';
+  }
+  
+  fixInputBox();
+  initMessageHandlers();
 });
 
 muteBtn.addEventListener('click', () => {
   isMuted = !isMuted;
   localStorage.setItem('isMuted', isMuted);
   const icon = muteBtn.querySelector('i');
-  icon.classList.toggle('fa-bell');
-  icon.classList.toggle('fa-bell-slash');
-  
-  if (isMuted) {
-    notificationSound.pause();
-    notificationSound.currentTime = 0;
-  }
+  icon.classList.toggle('fa-bell', !isMuted);
+  icon.classList.toggle('fa-bell-slash', isMuted);
 });
 
 // Typing detection
@@ -284,10 +353,12 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-// Initialize
+// Initialize everything
 initDarkMode();
 setupKeyboardHandling();
 scrollToBottom(true);
+initMessageHandlers();
+fixInputBox();
 
 // Socket.io Event Handlers
 socket.on('connect', () => {
@@ -299,6 +370,7 @@ socket.on('message', (msg) => {
     notificationSound.play().catch(() => {});
   }
   addMessage(msg);
+  initMessageHandlers();
   hideTypingIndicator();
 });
 
@@ -340,17 +412,13 @@ socket.on('messagesSeen', (updates) => {
   updates.forEach(update => {
     const message = document.getElementById(update.messageId);
     if (message) {
-      const seenUsersEl = message.querySelector('.seen-users');
-      if (seenUsersEl) {
+      const seenStatus = message.querySelector('.message-status');
+      if (seenStatus) {
         const seenNames = update.seenBy.map(u => u === username ? 'You' : u).join(', ');
-        seenUsersEl.textContent = seenNames;
-        seenUsersEl.title = `Seen by ${seenNames}`;
-      } else {
-        const seenEl = message.querySelector('.seen');
-        if (seenEl) {
-          const seenNames = update.seenBy.map(u => u === username ? 'You' : u).join(', ');
-          seenEl.innerHTML += `<span class="seen-users" title="Seen by ${seenNames}">${seenNames}</span>`;
-        }
+        seenStatus.innerHTML = `
+          <span class="seen-icon">${update.seenBy.length > 1 ? '✓✓' : '✓'}</span>
+          ${seenNames ? `<span class="seen-users">${seenNames}</span>` : ''}
+        `;
       }
     }
   });
