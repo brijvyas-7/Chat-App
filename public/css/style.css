@@ -428,8 +428,8 @@ body.dark .btn-close {
   color: var(--terminal-light-gray);
 }
 
-<<<<<<< HEAD
-/* Seen Status - Simplified */
+
+
 .message-status {
   display: flex;
   justify-content: flex-end;
@@ -627,5 +627,58 @@ body.dark .seen-users {
   color: #666;
   font-style: italic;
 }
-=======
->>>>>>> 761613fe7293aa4decdb04355b169d226888a83b
+/* Video Call Styles */
+#video-call-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+}
+
+.video-container {
+  flex: 1;
+  display: flex;
+  position: relative;
+}
+
+#local-video {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 30%;
+  max-width: 200px;
+  border: 2px solid white;
+  border-radius: 8px;
+}
+
+#remote-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.video-controls {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  padding: 15px;
+  background: rgba(0,0,0,0.7);
+}
+
+.video-controls button {
+  border-radius: 50%;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.video-controls button i {
+  font-size: 20px;
+}
