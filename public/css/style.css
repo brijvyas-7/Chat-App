@@ -428,6 +428,7 @@ body.dark .btn-close {
   color: var(--terminal-light-gray);
 }
 
+<<<<<<< HEAD
 /* Seen Status - Simplified */
 .message-status {
   display: flex;
@@ -626,3 +627,5 @@ body.dark .seen-users {
   color: #666;
   font-style: italic;
 }
+=======
+>>>>>>> 761613fe7293aa4decdb04355b169d226888a83b
