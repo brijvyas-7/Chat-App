@@ -1155,16 +1155,21 @@ socket.on('video-answer', async ({ answer, callId }) => {
   } catch (error) {
     console.error('Error setting remote description:', error);
     endVideoCall();
-    showCallEndedUI('Failed to establish call connection');
+    showCallEndedUI('Connection failed');
+    
+    // Notify the other peer
+    socket.emit('call-error', {
+      callId,
+      room,
+      error: 'Failed to set remote description'
+    });
   }
 });
 
 socket.on('ice-candidate', ({ candidate, callId }) => {
   if (!peerConnection || currentCallId !== callId) {
-    // Queue candidates if peer connection isn't ready yet
-    if (callId === currentCallId) {
-      iceCandidatesQueue.push(candidate);
-    }
+    // Queue candidates if we're not ready yet
+    iceCandidatesQueue.push(candidate);
     return;
   }
 
@@ -1176,55 +1181,44 @@ socket.on('ice-candidate', ({ candidate, callId }) => {
   }
 });
 
-socket.on('call-rejected', ({ callId, reason }) => {
+socket.on('reject-call', ({ callId, reason }) => {
   if (currentCallId === callId) {
     endVideoCall();
-    showCallEndedUI(reason === 'busy' ? 'User is busy' : 'Call was rejected');
+    showCallEndedUI(reason === 'busy' ? 'User is busy' : 'Call rejected');
   }
 });
 
-socket.on('call-ended', ({ callId }) => {
+socket.on('end-call', ({ callId }) => {
   if (currentCallId === callId) {
     endVideoCall();
     showCallEndedUI('Call ended by other user');
   }
 });
 
-socket.on('roomData', ({ room, users }) => {
-  roomNameElem.textContent = room;
-  updateUserList(users);
-});
-
-// Update user list in room
-function updateUserList(users) {
-  const userList = document.getElementById('users');
-  if (userList) {
-    userList.innerHTML = `
-      <h3><i class="fas fa-users"></i> Room Users</h3>
-      <ul>
-        ${users.map(user => `<li>${user.username}</li>`).join('')}
-      </ul>
-    `;
+socket.on('call-error', ({ callId, error }) => {
+  if (currentCallId === callId) {
+    endVideoCall();
+    showCallEndedUI(`Call failed: ${error}`);
   }
-}
-
+});
 // Initialize the app
 function init() {
-  initDarkMode();
-  setupEventListeners();
-  setupKeyboardHandling();
-  updateMediaButtons();
-  fixInputBox();
-  initMessageHandlers();
-  scrollToBottom(true);
-
-  // Focus input on mobile when clicking messages container
-  if (window.innerWidth <= 768) {
-    chatMessages.addEventListener('click', () => {
-      msgInput.focus();
-    });
+  if (!username || !room) {
+    alert('Missing username or room parameters');
+    return;
   }
+
+  initDarkMode();
+  setupKeyboardHandling();
+  scrollToBottom(true);
+  initMessageHandlers();
+  fixInputBox();
+  setupEventListeners();
+  updateMediaButtons();
+
+  // Set room name in header
+  roomNameElem.textContent = room || 'Global Chat';
 }
 
-// Start the app
-document.addEventListener('DOMContentLoaded', init);
+// Start the application
+init();
