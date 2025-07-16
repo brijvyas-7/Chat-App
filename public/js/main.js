@@ -1,5 +1,3 @@
-// ✅ Fully Working main.js with WebRTC Fix – Chat + Call Features – Copy-Paste Ready
-
 const socket = io({ reconnection: true, reconnectionAttempts: 5, reconnectionDelay: 1000 });
 
 const msgInput = document.getElementById('msg');
@@ -45,7 +43,6 @@ const uuidv4 = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c =
   const r = Math.random() * 16 | 0;
   return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
 });
-
 // Dark Mode
 function initDarkMode() {
   const isDark = localStorage.getItem('darkMode') === 'true';
@@ -97,13 +94,11 @@ function setupSwipeHandler(el) {
 }
 function addMessage(msg) {
   document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
-
   const el = document.createElement('div');
   const isMe = msg.username === username;
   const isSystem = msg.username === 'ChatApp Bot';
   el.id = msg.id;
   el.className = `message ${isMe ? 'you' : 'other'}${isSystem ? ' system' : ''}`;
-
   let html = '';
   if (msg.replyTo) {
     html += `<div class="message-reply"><span class="reply-sender">${msg.replyTo.username}</span><span class="reply-text">${msg.replyTo.text}</span></div>`;
@@ -115,7 +110,6 @@ function addMessage(msg) {
     const seenNames = seen.map(u => u === username ? 'You' : u).join(', ');
     html += `<div class="message-status"><span class="seen-icon">${seenIcon}</span>${seenNames ? `<span class="seen-users">${seenNames}</span>` : ''}</div>`;
   }
-
   el.innerHTML = html;
   if (!isSystem) {
     el.onclick = () => {
@@ -124,9 +118,7 @@ function addMessage(msg) {
       if (user && text) setupReply(user, el.id, text);
     };
   }
-
   if (!document.body.classList.contains('dark')) setupSwipeHandler(el);
-
   chatMessages.appendChild(el);
   setTimeout(() => chatMessages.scrollTo({ top: chatMessages.scrollHeight, behavior: 'smooth' }), 20);
 }
@@ -228,14 +220,14 @@ async function startVideoCall() {
     if (e.candidate) socket.emit('ice-candidate', { candidate: e.candidate, room, callId: currentCallId });
   };
   peerConnection.ontrack = e => {
-    const stream = e.streams[0];
     if (!remoteStream) {
-      remoteStream = stream;
+      remoteStream = e.streams[0];
       const remoteV = document.getElementById('remote-video');
-      remoteV.srcObject = stream;
+      remoteV.srcObject = remoteStream;
       remoteV.play().catch(() => {});
     }
   };
+
   peerConnection.onconnectionstatechange = () => {
     const s = peerConnection.connectionState;
     if (['disconnected', 'failed', 'closed'].includes(s)) {
@@ -289,6 +281,7 @@ async function handleIncomingCall({ offer, callId, caller }) {
       remoteV.play().catch(() => {});
     }
   };
+
   peerConnection.onconnectionstatechange = () => {
     const st = peerConnection.connectionState;
     if (['disconnected', 'failed', 'closed'].includes(st)) {
