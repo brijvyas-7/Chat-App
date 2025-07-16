@@ -52,15 +52,24 @@ let iceCandidatesQueue = [];
 let currentCallId = null;
 let callTimeout = null;
 let isCallActive = false;
+let isCaller = false;
 
-// ICE Servers Configuration
+// Enhanced ICE Servers Configuration
 const configuration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' }
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { 
+      urls: 'turn:global.turn.twilio.com:3478?transport=udp',
+      username: 'YOUR_TWILIO_USERNAME', // Replace with your Twilio credentials
+      credential: 'YOUR_TWILIO_CREDENTIAL'
+    }
   ],
-  iceCandidatePoolSize: 10
+  iceCandidatePoolSize: 10,
+  bundlePolicy: 'max-bundle',
+  rtcpMuxPolicy: 'require',
+  iceTransportPolicy: 'all'
 };
 
 // UUID generator for call IDs
@@ -298,7 +307,34 @@ function markMessagesAsSeen() {
 // Keyboard handling
 function setupKeyboardHandling() {
   let lastHeight = window.innerHeight;
+  let isKeyboardOpen = false;
 
+  // iOS specific fixes
+  if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+    window.addEventListener('resize', () => {
+      const newHeight = window.innerHeight;
+      const keyboardThreshold = 300;
+      
+      if (Math.abs(newHeight - lastHeight) > keyboardThreshold) {
+        isKeyboardOpen = newHeight < lastHeight;
+        
+        if (isKeyboardOpen) {
+          // Keyboard opened
+          document.querySelector('header').style.position = 'static';
+          setTimeout(() => {
+            scrollToBottom(true);
+          }, 300);
+        } else {
+          // Keyboard closed
+          document.querySelector('header').style.position = 'sticky';
+        }
+      }
+      
+      lastHeight = newHeight;
+    });
+  }
+
+  // Android and general handling
   window.addEventListener('resize', () => {
     const newHeight = window.innerHeight;
     if (newHeight < lastHeight) {
@@ -325,11 +361,13 @@ function updateMediaButtons() {
   const videoBtn = document.getElementById('toggle-video-btn');
   
   if (audioBtn) {
-    audioBtn.innerHTML = `<i class="fas fa-microphone${isAudioMuted ? '-slash' : ''}"></i> ${isAudioMuted ? 'Unmute' : 'Mute'}`;
+    audioBtn.innerHTML = `<i class="fas fa-microphone${isAudioMuted ? '-slash' : ''}"></i>`;
+    audioBtn.style.background = isAudioMuted ? '#ff9800' : '#4CAF50';
   }
   
   if (videoBtn) {
-    videoBtn.innerHTML = `<i class="fas fa-video${isVideoOff ? '-slash' : ''}"></i> ${isVideoOff ? 'Video On' : 'Video Off'}`;
+    videoBtn.innerHTML = `<i class="fas fa-video${isVideoOff ? '-slash' : ''}"></i>`;
+    videoBtn.style.background = isVideoOff ? '#ff9800' : '#2196F3';
   }
   
   muteBtn.innerHTML = `<i class="fas fa-bell${isMuted ? '-slash' : ''}"></i>`;
@@ -418,13 +456,6 @@ function setupEventListeners() {
       endVideoCall();
     }
   });
-
-  // iOS-specific fixes
-  if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
-    window.addEventListener('resize', () => {
-      document.querySelector('header').style.position = 'sticky';
-    });
-  }
 }
 
 // Process queued ICE candidates
@@ -447,14 +478,17 @@ function showCallingUI() {
       <div class="calling-spinner"></div>
       <div class="calling-text">Calling...</div>
       <button id="cancel-call-btn" class="btn btn-danger">
-        <i class="fas fa-phone-slash"></i> Cancel
+        <i class="fas fa-phone-slash"></i>
       </button>
     </div>
   `;
 
   document.getElementById('cancel-call-btn').addEventListener('click', endVideoCall);
-  callSound.loop = true;
-  callSound.play().catch(e => console.log("Call sound error:", e));
+  
+  if (isCaller) {
+    callSound.loop = true;
+    callSound.play().catch(e => console.log("Call sound error:", e));
+  }
 }
 
 // Show active call UI
@@ -470,13 +504,13 @@ function showVideoCallUI() {
     </div>
     <div class="video-controls">
       <button id="toggle-audio-btn" class="control-btn audio-btn">
-        <i class="fas fa-microphone"></i>
+        <i class="fas fa-microphone${isAudioMuted ? '-slash' : ''}"></i>
       </button>
       <button id="end-call-btn" class="control-btn end-btn">
         <i class="fas fa-phone-slash"></i>
       </button>
       <button id="toggle-video-btn" class="control-btn video-btn">
-        <i class="fas fa-video"></i>
+        <i class="fas fa-video${isVideoOff ? '-slash' : ''}"></i>
       </button>
     </div>
   `;
@@ -488,7 +522,7 @@ function showVideoCallUI() {
   const newToggleVideoBtn = document.getElementById('toggle-video-btn');
   const newEndCallBtn = document.getElementById('end-call-btn');
 
-  newLocalVideo.srcObject = localStream;
+  if (localStream) newLocalVideo.srcObject = localStream;
   if (remoteStream) newRemoteVideo.srcObject = remoteStream;
 
   newToggleAudioBtn.addEventListener('click', toggleAudio);
@@ -555,21 +589,19 @@ function showVideoCallUI() {
       cursor: pointer;
       font-size: 20px;
       transition: all 0.2s;
+      color: white;
     }
     
     .audio-btn {
-      background: #4CAF50;
-      color: white;
+      background: ${isAudioMuted ? '#ff9800' : '#4CAF50'};
     }
     
     .video-btn {
-      background: #2196F3;
-      color: white;
+      background: ${isVideoOff ? '#ff9800' : '#2196F3'};
     }
     
     .end-btn {
       background: #f44336;
-      color: white;
       width: 60px;
       height: 60px;
     }
@@ -580,6 +612,34 @@ function showVideoCallUI() {
     
     .control-btn i {
       pointer-events: none;
+    }
+    
+    .calling-ui {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: white;
+    }
+    
+    .calling-spinner {
+      width: 60px;
+      height: 60px;
+      border: 5px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 1s ease-in-out infinite;
+      margin-bottom: 20px;
+    }
+    
+    .calling-text {
+      font-size: 24px;
+      margin-bottom: 30px;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
   `;
   document.head.appendChild(style);
@@ -619,6 +679,8 @@ function endVideoCall() {
   remoteStream = null;
   peerConnection = null;
   currentCallId = null;
+  isCallActive = false;
+  isCaller = false;
   clearTimeout(callTimeout);
   callSound.pause();
   callSound.currentTime = 0;
@@ -697,11 +759,12 @@ async function startVideoCall() {
     currentCallId = uuidv4();
     console.log("Starting video call with ID:", currentCallId);
     isCallActive = true;
+    isCaller = true;
 
     // Create peer connection
     peerConnection = new RTCPeerConnection(configuration);
 
-    // Get local media stream
+    // Get local media stream with enhanced audio settings
     localStream = await navigator.mediaDevices.getUserMedia({
       video: {
         width: { ideal: 1280 },
@@ -709,9 +772,13 @@ async function startVideoCall() {
         facingMode: 'user'
       },
       audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
+        echoCancellation: { exact: true },
+        noiseSuppression: { exact: true },
+        autoGainControl: { exact: true },
+        sampleRate: 48000,
+        channelCount: 1,
+        latency: 0.01,
+        volume: 1.0
       }
     });
 
@@ -761,11 +828,29 @@ async function startVideoCall() {
       }
     };
 
+    // ICE gathering state change
+    peerConnection.onicegatheringstatechange = () => {
+      console.log('ICE gathering state:', peerConnection.iceGatheringState);
+    };
+
+    // ICE connection state change
+    peerConnection.oniceconnectionstatechange = () => {
+      console.log('ICE connection state:', peerConnection.iceConnectionState);
+      if (peerConnection.iceConnectionState === 'disconnected' || 
+          peerConnection.iceConnectionState === 'failed') {
+        endVideoCall();
+        showCallEndedUI('Call disconnected');
+      }
+    };
+
     // Create offer
     const offer = await peerConnection.createOffer({
       offerToReceiveAudio: true,
-      offerToReceiveVideo: true
+      offerToReceiveVideo: true,
+      voiceActivityDetection: false // Reduces noise
     });
+    
+    // Set codec preferences for better audio quality
     await peerConnection.setLocalDescription(offer);
 
     // Show calling UI
@@ -801,22 +886,45 @@ async function handleIncomingCall({ offer, callId, caller }) {
     return;
   }
 
+  // Play call sound only for receiver
+  callSound.loop = true;
+  callSound.play().catch(e => console.log("Call sound error:", e));
+
   const acceptCall = confirm(`${caller} is calling. Accept?`);
   
   if (!acceptCall) {
+    callSound.pause();
+    callSound.currentTime = 0;
     socket.emit('reject-call', { room, callId });
     return;
   }
 
   try {
+    callSound.pause();
+    callSound.currentTime = 0;
+    
     currentCallId = callId;
     isCallActive = true;
+    isCaller = false;
 
-    // Get local media
+    // Get local media with enhanced audio settings
     localStream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: true
+      video: {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        facingMode: 'user'
+      },
+      audio: {
+        echoCancellation: { exact: true },
+        noiseSuppression: { exact: true },
+        autoGainControl: { exact: true },
+        sampleRate: 48000,
+        channelCount: 1,
+        latency: 0.01,
+        volume: 1.0
+      }
     });
+    
     localVideo.srcObject = localStream;
     localVideo.muted = true;
     localVideo.play().catch(e => console.log("Local video play error:", e));
@@ -863,11 +971,28 @@ async function handleIncomingCall({ offer, callId, caller }) {
       }
     };
 
+    // ICE gathering state change
+    peerConnection.onicegatheringstatechange = () => {
+      console.log('ICE gathering state:', peerConnection.iceGatheringState);
+    };
+
+    // ICE connection state change
+    peerConnection.oniceconnectionstatechange = () => {
+      console.log('ICE connection state:', peerConnection.iceConnectionState);
+      if (peerConnection.iceConnectionState === 'disconnected' || 
+          peerConnection.iceConnectionState === 'failed') {
+        endVideoCall();
+        showCallEndedUI('Call disconnected');
+      }
+    };
+
     // Set remote description
     await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
 
     // Create answer
-    const answer = await peerConnection.createAnswer();
+    const answer = await peerConnection.createAnswer({
+      voiceActivityDetection: false // Reduces noise
+    });
     await peerConnection.setLocalDescription(answer);
 
     // Send answer to caller
@@ -879,6 +1004,9 @@ async function handleIncomingCall({ offer, callId, caller }) {
 
     // Process any queued ICE candidates
     processQueuedCandidates();
+
+    // Show video UI immediately
+    showVideoCallUI();
 
   } catch (error) {
     console.error('Error handling incoming call:', error);
@@ -1027,56 +1155,76 @@ socket.on('video-answer', async ({ answer, callId }) => {
   } catch (error) {
     console.error('Error setting remote description:', error);
     endVideoCall();
+    showCallEndedUI('Failed to establish call connection');
   }
 });
 
-socket.on('ice-candidate', async ({ candidate, callId }) => {
-  if (!peerConnection) {
-    iceCandidatesQueue.push(candidate);
+socket.on('ice-candidate', ({ candidate, callId }) => {
+  if (!peerConnection || currentCallId !== callId) {
+    // Queue candidates if peer connection isn't ready yet
+    if (callId === currentCallId) {
+      iceCandidatesQueue.push(candidate);
+    }
     return;
   }
 
-  if (currentCallId !== callId) return;
-
   try {
-    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
+      .catch(e => console.error("Error adding ICE candidate:", e));
   } catch (error) {
-    console.error('Error adding ICE candidate:', error);
+    console.error('Error processing ICE candidate:', error);
   }
 });
 
-socket.on('end-call', ({ callId }) => {
-  if (currentCallId === callId || !currentCallId) {
-    endVideoCall();
-    showCallEndedUI('The other party has ended the call.');
-  }
-});
-
-socket.on('reject-call', ({ callId, reason }) => {
+socket.on('call-rejected', ({ callId, reason }) => {
   if (currentCallId === callId) {
     endVideoCall();
-    showCallEndedUI(reason === 'busy' ? 'The user is busy.' : 'Call rejected.');
+    showCallEndedUI(reason === 'busy' ? 'User is busy' : 'Call was rejected');
   }
 });
+
+socket.on('call-ended', ({ callId }) => {
+  if (currentCallId === callId) {
+    endVideoCall();
+    showCallEndedUI('Call ended by other user');
+  }
+});
+
+socket.on('roomData', ({ room, users }) => {
+  roomNameElem.textContent = room;
+  updateUserList(users);
+});
+
+// Update user list in room
+function updateUserList(users) {
+  const userList = document.getElementById('users');
+  if (userList) {
+    userList.innerHTML = `
+      <h3><i class="fas fa-users"></i> Room Users</h3>
+      <ul>
+        ${users.map(user => `<li>${user.username}</li>`).join('')}
+      </ul>
+    `;
+  }
+}
 
 // Initialize the app
 function init() {
-  if (!username || !room) {
-    alert('Missing username or room parameters');
-    return;
-  }
-
   initDarkMode();
-  setupKeyboardHandling();
-  scrollToBottom(true);
-  initMessageHandlers();
-  fixInputBox();
   setupEventListeners();
+  setupKeyboardHandling();
   updateMediaButtons();
+  fixInputBox();
+  initMessageHandlers();
+  scrollToBottom(true);
 
-  // Set room name in header
-  roomNameElem.textContent = room || 'Global Chat';
+  // Focus input on mobile when clicking messages container
+  if (window.innerWidth <= 768) {
+    chatMessages.addEventListener('click', () => {
+      msgInput.focus();
+    });
+  }
 }
 
-// Start the application
-init(); 
+// Start the app
+document.addEventListener('DOMContentLoaded', init);
