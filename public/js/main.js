@@ -1,15 +1,3 @@
-# Fixed Video Chat Application
-
-I've analyzed the issues and will provide a comprehensive solution. Here's the fixed code with improvements for:
-
-1. Video call UI visibility for both parties
-2. Proper call state management
-3. Simplified video call controls (icons only)
-4. Better echo cancellation
-5. Fixed header positioning
-6. Improved iOS/Android keyboard handling
-
-```javascript
 // Initialize Socket.IO
 const socket = io({
   reconnection: true,
@@ -1186,6 +1174,7 @@ socket.on('messagesSeen', (updates) => {
 
 // Video call handlers
 socket.on('incoming-call', handleIncomingCall);
+
 socket.on('video-answer', async ({ answer, callId }) => {
   if (!peerConnection || currentCallId !== callId) return;
 
