@@ -1,3 +1,4 @@
+// ----------------------------
 const socket = io({ reconnection: true, reconnectionAttempts: 5, reconnectionDelay: 1000 });
 
 const msgInput = document.getElementById('msg');
@@ -22,6 +23,7 @@ let isMuted = localStorage.getItem('isMuted') === 'true';
 let lastTypingUpdate = 0;
 const SWIPE_THRESHOLD = 60;
 
+// For WebRTC
 let peerConnection = null;
 let localStream = null;
 let remoteStream = null;
@@ -44,7 +46,7 @@ const uuidv4 = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c =
   return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
 });
 
-// ---------- Dark Mode ----------
+// ---------- Dark Mode Setup ----------
 function initDarkMode() {
   const isDark = localStorage.getItem('darkMode') === 'true';
   document.body.classList.toggle('dark', isDark);
@@ -78,7 +80,7 @@ function setupReply(user, msgID, text) {
   msgInput.focus();
 }
 
-// ---------- Swipe Reply ----------
+// ---------- Swipe-to-Reply ----------
 function setupSwipeHandler(el) {
   let startX = 0;
   el.addEventListener('touchstart', e => startX = e.touches[0].clientX, { passive: true });
@@ -96,14 +98,13 @@ function setupSwipeHandler(el) {
   }, { passive: true });
 }
 
-// ---------- Add Message ----------
+// ---------- Chat UI ----------
 function addMessage(msg) {
   document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
 
   const el = document.createElement('div');
   const isMe = msg.username === username;
   const isSystem = msg.username === 'ChatApp Bot';
-
   el.id = msg.id;
   el.className = `message ${isMe ? 'you' : 'other'}${isSystem ? ' system' : ''}`;
 
@@ -114,7 +115,7 @@ function addMessage(msg) {
                <span class="reply-text">${msg.replyTo.text}</span>
              </div>`;
   }
-  html += `<div class="meta">${isMe ? '<span class="prompt-sign">></span>' : ''}<strong>${msg.username}</strong>
+  html += `<div class="meta">${isMe ? '<span class="prompt-sign">></span>' : ''}<strong>${msg.username}</strong> 
            <span class="message-time">${msg.time}</span></div>
            <div class="text">${msg.text}</div>`;
   if (isMe) {
@@ -147,7 +148,7 @@ function addMessage(msg) {
   setTimeout(() => chatMessages.scrollTo({ top: chatMessages.scrollHeight, behavior: 'smooth' }), 20);
 }
 
-// ---------- Typing ----------
+// ---------- Typing Indicators ----------
 msgInput.oninput = () => {
   const now = Date.now();
   if (now - lastTypingUpdate > 1000) {
@@ -168,130 +169,167 @@ function showTypingIndicator(user) {
   }
 }
 
-// ---------- Video UI ----------
+// ---------- Video Call UI Handlers ----------
 function showCallingUI() {
-  videoCallContainer.innerHTML = `<div class="calling-ui">
-    <div class="calling-spinner"></div>
-    <div class="calling-text">Calling…</div>
-    <button id="cancel-call-btn" class="btn btn-danger">
-      <i class="fas fa-phone-slash"></i> Cancel
-    </button></div>`;
+  videoCallContainer.innerHTML = `
+    <div class="calling-ui">
+      <div class="calling-spinner"></div>
+      <div class="calling-text">Calling…</div>
+      <button id="cancel-call-btn" class="btn btn-danger">
+        <i class="fas fa-phone-slash"></i> Cancel
+      </button>
+    </div>`;
   videoCallContainer.classList.remove('d-none');
   document.getElementById('cancel-call-btn').onclick = endVideoCall;
-  callSound.loop = true; callSound.play().catch(() => {});
+  callSound.loop = true;
+  callSound.play().catch(() => {});
 }
+
 function showVideoCallUI() {
   callSound.pause();
   clearTimeout(callTimeout);
-  videoCallContainer.innerHTML = `<div class="video-container">
-    <video id="remote-video" autoplay playsinline class="remote-video"></video>
-    <video id="local-video" autoplay playsinline muted class="local-video"></video>
-  </div><div class="video-controls">
-    <button id="toggle-audio-btn" class="control-btn audio-btn"><i class="fas fa-microphone"></i></button>
-    <button id="end-call-btn" class="control-btn end-btn"><i class="fas fa-phone-slash"></i></button>
-    <button id="toggle-video-btn" class="control-btn video-btn"><i class="fas fa-video"></i></button>
-  </div>`;
+  videoCallContainer.innerHTML = `
+    <div class="video-container">
+      <video id="remote-video" autoplay playsinline class="remote-video"></video>
+      <video id="local-video" autoplay playsinline muted class="local-video"></video>
+    </div>
+    <div class="video-controls">
+      <button id="toggle-audio-btn" class="control-btn audio-btn">
+        <i class="fas fa-microphone"></i>
+      </button>
+      <button id="end-call-btn" class="control-btn end-btn">
+        <i class="fas fa-phone-slash"></i>
+      </button>
+      <button id="toggle-video-btn" class="control-btn video-btn">
+        <i class="fas fa-video"></i>
+      </button>
+    </div>`;
   document.getElementById('toggle-audio-btn').onclick = toggleAudio;
   document.getElementById('toggle-video-btn').onclick = toggleVideo;
   document.getElementById('end-call-btn').onclick = endVideoCall;
 }
+
 function hideCallUI() {
   videoCallContainer.classList.add('d-none');
   callSound.pause();
   clearTimeout(callTimeout);
 }
+
 function showCallEndedUI(msg) {
   const div = document.createElement('div');
   div.className = 'call-ended-alert';
-  div.innerHTML = `<div class="alert-content">
-    <p>${msg}</p><button id="close-alert-btn" class="btn btn-primary">OK</button>
-  </div>`;
+  div.innerHTML = `
+    <div class="alert-content">
+      <p>${msg}</p><button id="close-alert-btn" class="btn btn-primary">OK</button>
+    </div>`;
   document.body.appendChild(div);
   document.getElementById('close-alert-btn').onclick = () => div.remove();
 }
 
-// ---------- Toggle Media ----------
+// ---------- Media Toggle Logic ----------
 function updateMediaButtons() {
   const audioBtn = document.getElementById('toggle-audio-btn');
   const videoBtn = document.getElementById('toggle-video-btn');
-  if (audioBtn) audioBtn.innerHTML = `<i class="fas fa-microphone${isAudioMuted ? '-slash' : ''}"></i>`;
-  if (videoBtn) videoBtn.innerHTML = `<i class="fas fa-video${isVideoOff ? '-slash' : ''}"></i>`;
+  if (audioBtn) {
+    audioBtn.innerHTML = `<i class="fas fa-microphone${isAudioMuted ? '-slash' : ''}"></i>`;
+  }
+  if (videoBtn) {
+    videoBtn.innerHTML = `<i class="fas fa-video${isVideoOff ? '-slash' : ''}"></i>`;
+  }
 }
+
 function toggleAudio() {
   isAudioMuted = !isAudioMuted;
   localStream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
   updateMediaButtons();
 }
+
 function toggleVideo() {
   isVideoOff = !isVideoOff;
   localStream.getVideoTracks().forEach(t => t.enabled = !isVideoOff);
   updateMediaButtons();
 }
 
-// ---------- Start Call ----------
+// ---------- WebRTC Helpers ----------
+function setupOnTrack() {
+  peerConnection.ontrack = e => {
+    const stream = e.streams[0];
+    if (!remoteStream) remoteStream = stream;
+    const rv = document.getElementById('remote-video');
+    if (rv && rv.srcObject !== stream) {
+      rv.srcObject = stream;
+      rv.play().catch(err => console.warn('Remote video play failed:', err));
+    }
+  };
+}
+
+function teardownCall() {
+  [localStream, remoteStream].forEach(s => s?.getTracks()?.forEach(t => t.stop()));
+  peerConnection?.close();
+  peerConnection = localStream = remoteStream = null;
+  isCallActive = false;
+  clearTimeout(callTimeout);
+}
+
+// ---------- Initiate Call ----------
 async function startVideoCall() {
   if (isCallActive) return;
+
   try {
     const test = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     test.getTracks().forEach(t => t.stop());
   } catch {
-    return alert('Allow camera and mic to start call.');
+    return alert('Allow camera and mic to start a call.');
   }
 
   isCallActive = true;
   currentCallId = uuidv4();
   peerConnection = new RTCPeerConnection(ICE_CONFIG);
-
-  localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true });
+  peerConnection.onicecandidate = e => {
+    if (e.candidate) {
+      socket.emit('ice-candidate', {
+        candidate: e.candidate,
+        room,
+        callId: currentCallId
+      });
+    }
+  };
+  setupOnTrack();
 
   showCallingUI();
   showVideoCallUI();
-  const localV = document.getElementById('local-video');
-  localV.srcObject = localStream;
-  localV.muted = true;
-  localV.play().catch(() => {});
 
-  localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+  localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  const lv = document.getElementById('local-video');
+  lv.srcObject = localStream;
+  lv.muted = true;
+  lv.play().catch(() => {});
 
-  peerConnection.onicecandidate = e => e.candidate && socket.emit('ice-candidate', { candidate: e.candidate, room, callId: currentCallId });
-  peerConnection.ontrack = e => {
-  const stream = e.streams[0];
-  if (!remoteStream) remoteStream = stream;
-  const remoteV = document.getElementById('remote-video');
-  if (remoteV.srcObject !== stream) {
-    remoteV.srcObject = stream;
-    remoteV.play().catch(() => {});
-  }
-};
-  peerConnection.onconnectionstatechange = () => {
-    const st = peerConnection.connectionState;
-    if (['disconnected', 'failed', 'closed'].includes(st)) {
-      endVideoCall();
-      showCallEndedUI('Call disconnected');
-    }
-  };
+  localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
 
   const offer = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offer);
-  socket.emit('video-call-initiate', { offer, room, callId: currentCallId, caller: username });
+  socket.emit('video-call-initiate', {
+    offer,
+    room,
+    callId: currentCallId,
+    caller: username
+  });
 
   callTimeout = setTimeout(() => {
-    if (!remoteStream && ['new', 'connecting'].includes(peerConnection.connectionState)) {
-      endVideoCall();
-      showCallEndedUI('No answer');
-    }
+    teardownCall();
+    showCallEndedUI('No answer');
   }, 30000);
 }
 
 // ---------- Receive Call ----------
 async function handleIncomingCall({ offer, callId, caller }) {
-  if (isCallActive && peerConnection?.connectionState === 'connected') {
+  if (isCallActive) {
     socket.emit('reject-call', { room, callId, reason: 'busy' });
     return;
   }
 
-  const accept = confirm(`${caller} is calling. Accept?`);
-  if (!accept) {
+  if (!confirm(`${caller} is calling. Accept?`)) {
     socket.emit('reject-call', { room, callId });
     return;
   }
@@ -299,81 +337,60 @@ async function handleIncomingCall({ offer, callId, caller }) {
   isCallActive = true;
   currentCallId = callId;
   peerConnection = new RTCPeerConnection(ICE_CONFIG);
+  peerConnection.onicecandidate = e => {
+    if (e.candidate) {
+      socket.emit('ice-candidate', {
+        candidate: e.candidate,
+        room,
+        callId
+      });
+    }
+  };
+  setupOnTrack();
 
-  // 🟢 1. Show video UI FIRST so DOM is ready
   showVideoCallUI();
 
-  // 🟢 2. Get media
   localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  const lv = document.getElementById('local-video');
+  lv.srcObject = localStream;
+  lv.muted = true;
+  lv.play().catch(() => {});
 
-  // 🟢 3. Set preview
-  const localV = document.getElementById('local-video');
-  localV.srcObject = localStream;
-  localV.muted = true;
-  localV.play().catch(() => {});
-
-  // 🟢 4. Add tracks
   localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
-
-  // ICE
-  peerConnection.onicecandidate = e => {
-    if (e.candidate) socket.emit('ice-candidate', { candidate: e.candidate, room, callId });
-  };
-
-  // Remote stream
-  peerConnection.ontrack = e => {
-    if (!remoteStream) {
-      remoteStream = e.streams[0];
-      const remoteV = document.getElementById('remote-video');
-      remoteV.srcObject = remoteStream;
-    }
-  };
-
-  peerConnection.onconnectionstatechange = () => {
-    const st = peerConnection.connectionState;
-    if (['disconnected', 'failed', 'closed'].includes(st)) {
-      endVideoCall();
-      showCallEndedUI('Call disconnected');
-    }
-  };
 
   await peerConnection.setRemoteDescription(offer);
   const answer = await peerConnection.createAnswer();
   await peerConnection.setLocalDescription(answer);
   socket.emit('video-answer', { answer, room, callId });
-
-  // Process any queued ICE
-  iceQueue.forEach(c => peerConnection.addIceCandidate(c));
-  iceQueue = [];
 }
 
 // ---------- End Call ----------
 function endVideoCall() {
-  [localStream, remoteStream].forEach(s => s?.getTracks()?.forEach(t => t.stop()));
-  peerConnection?.close();
-  isCallActive = false;
-  currentCallId = null;
-  clearTimeout(callTimeout);
+  teardownCall();
   hideCallUI();
   socket.emit('end-call', { room, callId: currentCallId });
 }
 
-// ---------- Socket Events ----------
+// ---------- Socket Event Handling ----------
 socket.on('connect', () => socket.emit('joinRoom', { username, room }));
+
 socket.on('message', msg => {
   if (msg.username !== username && !isMuted) notificationSound.play().catch(() => {});
   addMessage(msg);
 });
+
 socket.on('showTyping', ({ username: u }) => u !== username && showTypingIndicator(u));
 socket.on('stopTyping', () => document.querySelectorAll('.typing-indicator').forEach(el => el.remove()));
 
 socket.on('incoming-call', handleIncomingCall);
+
 socket.on('video-answer', async ({ answer, callId }) => {
   if (callId !== currentCallId) return;
   await peerConnection.setRemoteDescription(answer);
   iceQueue.forEach(c => peerConnection.addIceCandidate(c));
   iceQueue = [];
 });
+
 socket.on('ice-candidate', ({ candidate, callId }) => {
   if (callId !== currentCallId || !peerConnection) {
     iceQueue.push(candidate);
@@ -381,13 +398,18 @@ socket.on('ice-candidate', ({ candidate, callId }) => {
     peerConnection.addIceCandidate(candidate).catch(console.error);
   }
 });
-socket.on('end-call', () => endVideoCall());
+
+socket.on('end-call', () => {
+  teardownCall();
+  hideCallUI();
+});
 socket.on('reject-call', ({ reason }) => {
-  endVideoCall();
+  teardownCall();
+  hideCallUI();
   showCallEndedUI(reason === 'busy' ? 'User is busy' : 'Call rejected');
 });
 
-// ---------- Init ----------
+// ---------- Chat Submit & Final Initialization ----------
 document.getElementById('chat-form').onsubmit = e => {
   e.preventDefault();
   const text = msgInput.value.trim();
