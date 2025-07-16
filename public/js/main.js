@@ -492,11 +492,14 @@ function showCallingUI() {
 }
 
 // Show active call UI
+// Show active call UI - FIXED VERSION
 function showVideoCallUI() {
   clearTimeout(callTimeout);
   callSound.pause();
   callSound.currentTime = 0;
 
+  // Create the video grid UI
+  videoCallContainer.classList.remove('d-none');
   videoCallContainer.innerHTML = `
     <div class="video-grid">
       <video id="remote-video" autoplay playsinline class="remote-video"></video>
@@ -515,21 +518,32 @@ function showVideoCallUI() {
     </div>
   `;
 
-  // Update references to new elements
+  // Get the new video elements
   const newLocalVideo = document.getElementById('local-video');
   const newRemoteVideo = document.getElementById('remote-video');
-  const newToggleAudioBtn = document.getElementById('toggle-audio-btn');
-  const newToggleVideoBtn = document.getElementById('toggle-video-btn');
-  const newEndCallBtn = document.getElementById('end-call-btn');
 
-  if (localStream) newLocalVideo.srcObject = localStream;
-  if (remoteStream) newRemoteVideo.srcObject = remoteStream;
+  // Attach streams to video elements
+  if (localStream) {
+    newLocalVideo.srcObject = localStream;
+    newLocalVideo.play().catch(e => console.log("Local video play error:", e));
+  }
+  
+  if (remoteStream) {
+    newRemoteVideo.srcObject = remoteStream;
+    newRemoteVideo.play().catch(e => console.log("Remote video play error:", e));
+  }
 
-  newToggleAudioBtn.addEventListener('click', toggleAudio);
-  newToggleVideoBtn.addEventListener('click', toggleVideo);
-  newEndCallBtn.addEventListener('click', endVideoCall);
+  // Update global references
+  localVideo = newLocalVideo;
+  remoteVideo = newRemoteVideo;
+
+  // Set up event listeners
+  document.getElementById('toggle-audio-btn').addEventListener('click', toggleAudio);
+  document.getElementById('toggle-video-btn').addEventListener('click', toggleVideo);
+  document.getElementById('end-call-btn').addEventListener('click', endVideoCall);
 
   updateMediaButtons();
+}
 
   // Add CSS for proper video layout
   const style = document.createElement('style');
@@ -880,13 +894,13 @@ async function startVideoCall() {
 }
 
 // Handle incoming call
+// Handle incoming call - FIXED VERSION
 async function handleIncomingCall({ offer, callId, caller }) {
   if (peerConnection || isCallActive) {
     socket.emit('reject-call', { room, callId, reason: 'busy' });
     return;
   }
 
-  // Play call sound only for receiver
   callSound.loop = true;
   callSound.play().catch(e => console.log("Call sound error:", e));
 
@@ -925,10 +939,6 @@ async function handleIncomingCall({ offer, callId, caller }) {
       }
     });
     
-    localVideo.srcObject = localStream;
-    localVideo.muted = true;
-    localVideo.play().catch(e => console.log("Local video play error:", e));
-
     // Create peer connection
     peerConnection = new RTCPeerConnection(configuration);
 
@@ -937,14 +947,22 @@ async function handleIncomingCall({ offer, callId, caller }) {
       peerConnection.addTrack(track, localStream);
     });
 
-    // Set up remote stream handler
+    // Set up remote stream handler - FIXED
     peerConnection.ontrack = event => {
       if (!event.streams || event.streams.length === 0) return;
 
       remoteStream = event.streams[0];
-      remoteVideo.srcObject = remoteStream;
-      remoteVideo.play().catch(e => console.log("Remote video play error:", e));
-      showVideoCallUI();
+      
+      // Update the remote video element if it exists
+      if (remoteVideo) {
+        remoteVideo.srcObject = remoteStream;
+        remoteVideo.play().catch(e => console.log("Remote video play error:", e));
+      }
+      
+      // Ensure UI is properly shown
+      if (!videoCallContainer.classList.contains('d-none')) {
+        showVideoCallUI();
+      }
     };
 
     // ICE candidate handler
@@ -958,40 +976,12 @@ async function handleIncomingCall({ offer, callId, caller }) {
       }
     };
 
-    // Connection state handler
-    peerConnection.onconnectionstatechange = () => {
-      const state = peerConnection.connectionState;
-      console.log('Connection state:', state);
-
-      if (state === 'connected') {
-        clearTimeout(callTimeout);
-      } else if (state === 'disconnected' || state === 'failed') {
-        endVideoCall();
-        showCallEndedUI('Call disconnected');
-      }
-    };
-
-    // ICE gathering state change
-    peerConnection.onicegatheringstatechange = () => {
-      console.log('ICE gathering state:', peerConnection.iceGatheringState);
-    };
-
-    // ICE connection state change
-    peerConnection.oniceconnectionstatechange = () => {
-      console.log('ICE connection state:', peerConnection.iceConnectionState);
-      if (peerConnection.iceConnectionState === 'disconnected' || 
-          peerConnection.iceConnectionState === 'failed') {
-        endVideoCall();
-        showCallEndedUI('Call disconnected');
-      }
-    };
-
     // Set remote description
     await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
 
     // Create answer
     const answer = await peerConnection.createAnswer({
-      voiceActivityDetection: false // Reduces noise
+      voiceActivityDetection: false
     });
     await peerConnection.setLocalDescription(answer);
 
@@ -1002,10 +992,7 @@ async function handleIncomingCall({ offer, callId, caller }) {
       callId: currentCallId
     });
 
-    // Process any queued ICE candidates
-    processQueuedCandidates();
-
-    // Show video UI immediately
+    // Show UI immediately with local video
     showVideoCallUI();
 
   } catch (error) {
@@ -1221,4 +1208,4 @@ function init() {
 }
 
 // Start the application
-init();
+init(); is this fixed version? This code have not providing caller user , calling video call screen and accepting user their videocall screen. After acepting call both user show only chat and hearing sounds only no videocall view comming for both users pels fix
