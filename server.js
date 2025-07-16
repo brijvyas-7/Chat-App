@@ -140,18 +140,21 @@ io.on('connection', (socket) => {
   });
 
   // Handle call answer
-  socket.on('video-answer', ({ answer, room, callId }) => {
-    const call = activeCalls[room]?.[callId];
-    if (call) {
-      call.answer = answer;
-      
-      // Send answer to caller
-      io.to(call.callerSocket).emit('video-answer', {
-        answer,
-        callId
-      });
-    }
-  });
+  // In your socket.on('video-answer', …) handler, before emitting back to the caller:
+socket.on('video-answer', ({ answer, room, callId }) => {
+  const call = activeCalls[room]?.[callId];
+  if (call) {
+    // 1) Register the callee's socket ID so ICE candidates can be forwarded:
+    call.calleeSocket = socket.id;
+
+    // 2) Then send the answer back:
+    call.answer = answer;
+    io.to(call.callerSocket).emit('video-answer', {
+      answer,
+      callId
+    });
+  }
+});
 
   // Handle ICE candidates
   socket.on('ice-candidate', ({ candidate, room, callId }) => {
