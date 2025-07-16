@@ -295,22 +295,35 @@ async function handleIncomingCall({ offer, callId, caller }) {
   currentCallId = callId;
   peerConnection = new RTCPeerConnection(ICE_CONFIG);
 
+  // 🟢 1. Show video UI FIRST so DOM is ready
   showVideoCallUI();
 
+  // 🟢 2. Get media
   localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
 
+  // 🟢 3. Set preview
   const localV = document.getElementById('local-video');
   localV.srcObject = localStream;
   localV.muted = true;
   localV.play().catch(() => {});
 
+  // 🟢 4. Add tracks
   localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
 
-  peerConnection.onicecandidate = e => e.candidate && socket.emit('ice-candidate', { candidate: e.candidate, room, callId });
-  peerConnection.ontrack = e => {
-    remoteStream = e.streams[0];
-    document.getElementById('remote-video').srcObject = remoteStream;
+  // ICE
+  peerConnection.onicecandidate = e => {
+    if (e.candidate) socket.emit('ice-candidate', { candidate: e.candidate, room, callId });
   };
+
+  // Remote stream
+  peerConnection.ontrack = e => {
+    if (!remoteStream) {
+      remoteStream = e.streams[0];
+      const remoteV = document.getElementById('remote-video');
+      remoteV.srcObject = remoteStream;
+    }
+  };
+
   peerConnection.onconnectionstatechange = () => {
     const st = peerConnection.connectionState;
     if (['disconnected', 'failed', 'closed'].includes(st)) {
@@ -324,6 +337,7 @@ async function handleIncomingCall({ offer, callId, caller }) {
   await peerConnection.setLocalDescription(answer);
   socket.emit('video-answer', { answer, room, callId });
 
+  // Process any queued ICE
   iceQueue.forEach(c => peerConnection.addIceCandidate(c));
   iceQueue = [];
 }
