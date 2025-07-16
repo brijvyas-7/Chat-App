@@ -364,4 +364,4 @@ window.addEventListener('beforeunload', () => {
   if (!username || !room) return alert('Missing username or room!');
   initDarkMode();
   roomNameElem.textContent = room;
-})(); 
+})();
