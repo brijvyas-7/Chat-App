@@ -53,28 +53,14 @@ let currentCallId = null;
 let callTimeout = null;
 let isCallActive = false;
 
-// ICE Servers Configuration with better STUN/TURN servers
+// ICE Servers Configuration
 const configuration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { 
-      urls: 'turn:global.relay.metered.ca:80',
-      username: 'YOUR_TURN_USERNAME',
-      credential: 'YOUR_TURN_CREDENTIAL'
-    },
-    { 
-      urls: 'turn:global.relay.metered.ca:80?transport=tcp',
-      username: 'YOUR_TURN_USERNAME',
-      credential: 'YOUR_TURN_CREDENTIAL'
-    }
+    { urls: 'stun:stun2.l.google.com:19302' }
   ],
-  iceCandidatePoolSize: 10,
-  iceTransportPolicy: 'all',
-  bundlePolicy: 'max-bundle',
-  rtcpMuxPolicy: 'require',
-  encodedInsertableStreams: true
+  iceCandidatePoolSize: 10
 };
 
 // UUID generator for call IDs
@@ -322,23 +308,6 @@ function setupKeyboardHandling() {
   });
 
   msgInput.addEventListener('focus', () => setTimeout(scrollToBottom, 300));
-  
-  // Fix for iOS keyboard pushing header up
-  if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-    const header = document.querySelector('header');
-    const originalPosition = header.style.position;
-    const originalTop = header.style.top;
-    
-    msgInput.addEventListener('focus', () => {
-      header.style.position = 'absolute';
-      header.style.top = '0';
-    });
-    
-    msgInput.addEventListener('blur', () => {
-      header.style.position = originalPosition;
-      header.style.top = originalTop;
-    });
-  }
 }
 
 // Fix input box width
@@ -356,13 +325,11 @@ function updateMediaButtons() {
   const videoBtn = document.getElementById('toggle-video-btn');
   
   if (audioBtn) {
-    audioBtn.innerHTML = `<i class="fas fa-microphone${isAudioMuted ? '-slash' : ''}"></i>`;
-    audioBtn.style.background = isAudioMuted ? '#ff9800' : '#4CAF50';
+    audioBtn.innerHTML = `<i class="fas fa-microphone${isAudioMuted ? '-slash' : ''}"></i> ${isAudioMuted ? 'Unmute' : 'Mute'}`;
   }
   
   if (videoBtn) {
-    videoBtn.innerHTML = `<i class="fas fa-video${isVideoOff ? '-slash' : ''}"></i>`;
-    videoBtn.style.background = isVideoOff ? '#ff9800' : '#2196F3';
+    videoBtn.innerHTML = `<i class="fas fa-video${isVideoOff ? '-slash' : ''}"></i> ${isVideoOff ? 'Video On' : 'Video Off'}`;
   }
   
   muteBtn.innerHTML = `<i class="fas fa-bell${isMuted ? '-slash' : ''}"></i>`;
@@ -454,10 +421,9 @@ function setupEventListeners() {
 
   // iOS-specific fixes
   if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
-    const header = document.querySelector('header');
-    header.style.position = 'sticky';
-    header.style.top = '0';
-    header.style.zIndex = '1000';
+    window.addEventListener('resize', () => {
+      document.querySelector('header').style.position = 'sticky';
+    });
   }
 }
 
@@ -481,7 +447,7 @@ function showCallingUI() {
       <div class="calling-spinner"></div>
       <div class="calling-text">Calling...</div>
       <button id="cancel-call-btn" class="btn btn-danger">
-        <i class="fas fa-phone-slash"></i>
+        <i class="fas fa-phone-slash"></i> Cancel
       </button>
     </div>
   `;
@@ -615,29 +581,6 @@ function showVideoCallUI() {
     .control-btn i {
       pointer-events: none;
     }
-    
-    .calling-ui {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      color: white;
-      gap: 20px;
-    }
-    
-    .calling-spinner {
-      width: 50px;
-      height: 50px;
-      border: 5px solid rgba(255,255,255,0.3);
-      border-radius: 50%;
-      border-top-color: white;
-      animation: spin 1s ease-in-out infinite;
-    }
-    
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
   `;
   document.head.appendChild(style);
 }
@@ -657,7 +600,6 @@ function endVideoCall() {
   // Close peer connection
   if (peerConnection) {
     peerConnection.close();
-    peerConnection = null;
   }
 
   // Clear video elements
@@ -675,7 +617,7 @@ function endVideoCall() {
   // Reset state
   localStream = null;
   remoteStream = null;
-  isCallActive = false;
+  peerConnection = null;
   currentCallId = null;
   clearTimeout(callTimeout);
   callSound.pause();
@@ -698,7 +640,12 @@ function toggleAudio() {
       track.enabled = !track.enabled;
     });
     isAudioMuted = !isAudioMuted;
-    updateMediaButtons();
+
+    const audioBtn = document.getElementById('toggle-audio-btn');
+    if (audioBtn) {
+      audioBtn.innerHTML = `<i class="fas fa-microphone${isAudioMuted ? '-slash' : ''}"></i>`;
+      audioBtn.style.background = isAudioMuted ? '#ff9800' : '#4CAF50';
+    }
   }
 }
 
@@ -710,7 +657,12 @@ function toggleVideo() {
       track.enabled = !track.enabled;
     });
     isVideoOff = !isVideoOff;
-    updateMediaButtons();
+
+    const videoBtn = document.getElementById('toggle-video-btn');
+    if (videoBtn) {
+      videoBtn.innerHTML = `<i class="fas fa-video${isVideoOff ? '-slash' : ''}"></i>`;
+      videoBtn.style.background = isVideoOff ? '#ff9800' : '#2196F3';
+    }
 
     const localVideo = document.getElementById('local-video');
     if (localVideo) {
@@ -746,10 +698,10 @@ async function startVideoCall() {
     console.log("Starting video call with ID:", currentCallId);
     isCallActive = true;
 
-    // Create peer connection with better echo cancellation settings
+    // Create peer connection
     peerConnection = new RTCPeerConnection(configuration);
 
-    // Get local media stream with better audio processing
+    // Get local media stream
     localStream = await navigator.mediaDevices.getUserMedia({
       video: {
         width: { ideal: 1280 },
@@ -757,20 +709,15 @@ async function startVideoCall() {
         facingMode: 'user'
       },
       audio: {
-        echoCancellation: { exact: true },
-        noiseSuppression: { exact: true },
-        autoGainControl: { exact: true },
-        channelCount: 1,
-        sampleRate: 16000,
-        sampleSize: 16,
-        latency: 0.01
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
       }
     });
 
     // Display local video immediately
-    const localVideo = document.getElementById('local-video');
     localVideo.srcObject = localStream;
-    localVideo.muted = true;
+    localVideo.muted = true; // Mute local video to avoid echo
     localVideo.play().catch(e => console.log("Local video play error:", e));
 
     // Add tracks to connection
@@ -783,7 +730,6 @@ async function startVideoCall() {
       if (!event.streams || event.streams.length === 0) return;
 
       remoteStream = event.streams[0];
-      const remoteVideo = document.getElementById('remote-video');
       remoteVideo.srcObject = remoteStream;
       remoteVideo.play().catch(e => console.log("Remote video play error:", e));
 
@@ -855,129 +801,27 @@ async function handleIncomingCall({ offer, callId, caller }) {
     return;
   }
 
-  // Create a custom modal for call acceptance
-  const callModal = document.createElement('div');
-  callModal.className = 'call-modal';
-  callModal.innerHTML = `
-    <div class="call-modal-content">
-      <div class="caller-info">${caller} is calling...</div>
-      <div class="call-buttons">
-        <button id="accept-call-btn" class="btn btn-success">
-          <i class="fas fa-phone"></i>
-        </button>
-        <button id="reject-call-btn" class="btn btn-danger">
-          <i class="fas fa-phone-slash"></i>
-        </button>
-      </div>
-    </div>
-  `;
+  const acceptCall = confirm(`${caller} is calling. Accept?`);
   
-  document.body.appendChild(callModal);
-  
-  // Add styles for the modal
-  const style = document.createElement('style');
-  style.textContent = `
-    .call-modal {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0,0,0,0.8);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      z-index: 2000;
-    }
-    
-    .call-modal-content {
-      background: white;
-      padding: 30px;
-      border-radius: 10px;
-      text-align: center;
-      max-width: 80%;
-    }
-    
-    .caller-info {
-      font-size: 20px;
-      margin-bottom: 20px;
-    }
-    
-    .call-buttons {
-      display: flex;
-      justify-content: center;
-      gap: 20px;
-    }
-    
-    .call-buttons button {
-      width: 60px;
-      height: 60px;
-      border-radius: 50%;
-      font-size: 24px;
-    }
-  `;
-  document.head.appendChild(style);
-  
-  // Play ringtone
-  callSound.loop = true;
-  callSound.play().catch(e => console.log("Call sound error:", e));
-  
-  // Set timeout for auto-reject
-  const autoRejectTimeout = setTimeout(() => {
-    callModal.remove();
+  if (!acceptCall) {
     socket.emit('reject-call', { room, callId });
-    callSound.pause();
-    callSound.currentTime = 0;
-  }, 30000);
+    return;
+  }
 
-  // Handle accept/reject buttons
-  document.getElementById('accept-call-btn').addEventListener('click', async () => {
-    clearTimeout(autoRejectTimeout);
-    callModal.remove();
-    callSound.pause();
-    callSound.currentTime = 0;
-    await acceptIncomingCall(offer, callId, caller);
-  });
-
-  document.getElementById('reject-call-btn').addEventListener('click', () => {
-    clearTimeout(autoRejectTimeout);
-    callModal.remove();
-    socket.emit('reject-call', { room, callId });
-    callSound.pause();
-    callSound.currentTime = 0;
-  });
-}
-
-// Accept incoming call
-async function acceptIncomingCall(offer, callId, caller) {
   try {
     currentCallId = callId;
     isCallActive = true;
 
-    // Get local media with better audio processing
+    // Get local media
     localStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-        facingMode: 'user'
-      },
-      audio: {
-        echoCancellation: { exact: true },
-        noiseSuppression: { exact: true },
-        autoGainControl: { exact: true },
-        channelCount: 1,
-        sampleRate: 16000,
-        sampleSize: 16,
-        latency: 0.01
-      }
+      video: true,
+      audio: true
     });
-    
-    const localVideo = document.getElementById('local-video');
     localVideo.srcObject = localStream;
     localVideo.muted = true;
     localVideo.play().catch(e => console.log("Local video play error:", e));
 
-    // Create peer connection with better settings
+    // Create peer connection
     peerConnection = new RTCPeerConnection(configuration);
 
     // Add local tracks
@@ -990,7 +834,6 @@ async function acceptIncomingCall(offer, callId, caller) {
       if (!event.streams || event.streams.length === 0) return;
 
       remoteStream = event.streams[0];
-      const remoteVideo = document.getElementById('remote-video');
       remoteVideo.srcObject = remoteStream;
       remoteVideo.play().catch(e => console.log("Remote video play error:", e));
       showVideoCallUI();
@@ -1184,76 +1027,56 @@ socket.on('video-answer', async ({ answer, callId }) => {
   } catch (error) {
     console.error('Error setting remote description:', error);
     endVideoCall();
-    showCallEndedUI('Failed to establish call connection');
   }
 });
 
-socket.on('ice-candidate', ({ candidate, callId }) => {
-  if (!peerConnection || currentCallId !== callId) {
-    // Queue candidates if peer connection isn't ready yet
-    if (callId === currentCallId) {
-      iceCandidatesQueue.push(candidate);
-    }
+socket.on('ice-candidate', async ({ candidate, callId }) => {
+  if (!peerConnection) {
+    iceCandidatesQueue.push(candidate);
     return;
   }
 
+  if (currentCallId !== callId) return;
+
   try {
-    peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
-      .catch(e => console.error("Error adding ICE candidate:", e));
+    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
   } catch (error) {
-    console.error('Error processing ICE candidate:', error);
+    console.error('Error adding ICE candidate:', error);
   }
 });
 
-socket.on('call-rejected', ({ callId, reason }) => {
+socket.on('end-call', ({ callId }) => {
+  if (currentCallId === callId || !currentCallId) {
+    endVideoCall();
+    showCallEndedUI('The other party has ended the call.');
+  }
+});
+
+socket.on('reject-call', ({ callId, reason }) => {
   if (currentCallId === callId) {
     endVideoCall();
-    showCallEndedUI(reason === 'busy' ? 'User is busy' : 'Call was rejected');
+    showCallEndedUI(reason === 'busy' ? 'The user is busy.' : 'Call rejected.');
   }
 });
-
-socket.on('call-ended', ({ callId }) => {
-  if (currentCallId === callId) {
-    endVideoCall();
-    showCallEndedUI('Call ended by other user');
-  }
-});
-
-socket.on('roomData', ({ room, users }) => {
-  roomNameElem.textContent = room;
-  updateUserList(users);
-});
-
-// Update user list in room
-function updateUserList(users) {
-  const userList = document.getElementById('users');
-  if (userList) {
-    userList.innerHTML = `
-      <h3><i class="fas fa-users"></i> Room Users</h3>
-      <ul>
-        ${users.map(user => `<li>${user.username}</li>`).join('')}
-      </ul>
-    `;
-  }
-}
 
 // Initialize the app
 function init() {
-  initDarkMode();
-  setupEventListeners();
-  setupKeyboardHandling();
-  updateMediaButtons();
-  fixInputBox();
-  initMessageHandlers();
-  scrollToBottom(true);
-
-  // Focus input on mobile when clicking messages container
-  if (window.innerWidth <= 768) {
-    chatMessages.addEventListener('click', () => {
-      msgInput.focus();
-    });
+  if (!username || !room) {
+    alert('Missing username or room parameters');
+    return;
   }
+
+  initDarkMode();
+  setupKeyboardHandling();
+  scrollToBottom(true);
+  initMessageHandlers();
+  fixInputBox();
+  setupEventListeners();
+  updateMediaButtons();
+
+  // Set room name in header
+  roomNameElem.textContent = room || 'Global Chat';
 }
 
-// Start the app
-document.addEventListener('DOMContentLoaded', init);
+// Start the application
+init();
