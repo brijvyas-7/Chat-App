@@ -715,12 +715,19 @@ async function startVideoCall() {
       }
     });
 
-    // Display local video immediately
-    localVideo.srcObject = localStream;
-    localVideo.muted = true; // Mute local video to avoid echo
-    localVideo.play().catch(e => console.log("Local video play error:", e));
+    // Build the video-call UI right away, so both videos are in the DOM
+    showVideoCallUI();
 
-    // Add tracks to connection
+    // Now grab the fresh <video> elements that showVideoCallUI just injected
+    const newLocalVideo  = document.getElementById('local-video');
+    const newRemoteVideo = document.getElementById('remote-video');
+
+    // Wire up your local preview
+    newLocalVideo.srcObject = localStream;
+    newLocalVideo.muted     = true; // avoid echo on your own mic
+    newLocalVideo.play().catch(e => console.log("Local video play error:", e));
+ 
+     // Add tracks to connection
     localStream.getTracks().forEach(track => {
       peerConnection.addTrack(track, localStream);
     });
@@ -730,11 +737,11 @@ async function startVideoCall() {
       if (!event.streams || event.streams.length === 0) return;
 
       remoteStream = event.streams[0];
-      remoteVideo.srcObject = remoteStream;
-      remoteVideo.play().catch(e => console.log("Remote video play error:", e));
-
-      // Show both videos when remote stream is received
-      showVideoCallUI();
+      // And when we get the remote stream, set it into the new <video>
+      newRemoteVideo.srcObject = remoteStream;
+      newRemoteVideo.play().catch(e => console.log("Remote video play error:", e));
+ 
+     
     };
 
     // ICE candidate handler
