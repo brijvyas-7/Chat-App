@@ -255,9 +255,14 @@ async function startVideoCall() {
 
   peerConnection.onicecandidate = e => e.candidate && socket.emit('ice-candidate', { candidate: e.candidate, room, callId: currentCallId });
   peerConnection.ontrack = e => {
-    remoteStream = e.streams[0];
-    document.getElementById('remote-video').srcObject = remoteStream;
-  };
+  const stream = e.streams[0];
+  if (!remoteStream) remoteStream = stream;
+  const remoteV = document.getElementById('remote-video');
+  if (remoteV.srcObject !== stream) {
+    remoteV.srcObject = stream;
+    remoteV.play().catch(() => {});
+  }
+};
   peerConnection.onconnectionstatechange = () => {
     const st = peerConnection.connectionState;
     if (['disconnected', 'failed', 'closed'].includes(st)) {
