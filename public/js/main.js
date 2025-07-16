@@ -282,13 +282,18 @@ async function handleIncomingCall({ offer, callId, caller }) {
     if (e.candidate) socket.emit('ice-candidate', { candidate: e.candidate, room, callId });
   };
   peerConnection.ontrack = e => {
-  const remoteV = document.getElementById('remote-video');
-  if (remoteV.srcObject !== e.streams[0]) {
-    remoteStream = e.streams[0];
+  if (!remoteStream) {
+    remoteStream = new MediaStream();
+    const remoteV = document.getElementById('remote-video');
     remoteV.srcObject = remoteStream;
     remoteV.play().catch(() => {});
   }
-  };
+  e.streams[0]?.getTracks().forEach(track => {
+    if (!remoteStream.getTracks().includes(track)) {
+      remoteStream.addTrack(track);
+    }
+  });
+};
   peerConnection.onconnectionstatechange = () => {
     const st = peerConnection.connectionState;
     if (['disconnected', 'failed', 'closed'].includes(st)) {
