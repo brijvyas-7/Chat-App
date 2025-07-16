@@ -1079,4 +1079,4 @@ function init() {
 }
 
 // Start the application
-init();
+init(); 
