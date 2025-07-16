@@ -339,37 +339,44 @@ function toggleVideo() {
 }
 
 // ==============================
-// 11. Video-Call Logic
-// ==============================
+// ==== 1) startVideoCall ====
 async function startVideoCall() {
   if (isCallActive) return;
-  // check permissions
+  // 1. Check permissions
   try {
-    const testStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    testStream.getTracks().forEach(t => t.stop());
+    const test = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    test.getTracks().forEach(t => t.stop());
   } catch {
-    return alert('Please allow camera and microphone access.');
+    return alert('Please allow camera/mic access!');
   }
 
+  // 2. Enter busy state & prepare PeerConnection
   isCallActive  = true;
   currentCallId = uuidv4();
   peerConnection = new RTCPeerConnection(ICE_CONFIG);
 
-  // get local media
+  // 3. Grab your camera/mic
   localStream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: 'user' },
-    audio: { noiseSuppression: true, echoCancellation: true }
+    audio: { echoCancellation: true, noiseSuppression: true }
   });
 
-  // show calling spinner + UI
-  showCallingUI();
-  showVideoCallUI();
-  document.getElementById('local-video').srcObject = localStream;
+  // 4. Show overlay + inject videos
+  showCallingUI();   // spinner + cancel
+  showVideoCallUI(); // two <video> tags + controls
 
-  // add tracks
-  localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+  // 5. Wire up your local preview
+  const localV = document.getElementById('local-video');
+  localV.muted     = true;              // Safari autoplay quirk
+  localV.srcObject = localStream;
+  await localV.play().catch(() => {});
 
-  // ICE candidate handler
+  // 6. Add tracks to the connection
+  localStream.getTracks().forEach(track => 
+    peerConnection.addTrack(track, localStream)
+  );
+
+  // 7. ICE candidate handler
   peerConnection.onicecandidate = e => {
     if (e.candidate) {
       socket.emit('ice-candidate', {
@@ -380,29 +387,24 @@ async function startVideoCall() {
     }
   };
 
-  // remote track handler
-  peerConnection.ontrack = event => {
-    if (!event.streams || !event.streams[0]) return;
-    remoteStream = event.streams[0];
-    const remoteVid = document.getElementById('remote-video');
-    remoteVid.srcObject = remoteStream;
+  // 8. Remote-track handler
+  peerConnection.ontrack = e => {
+    remoteStream = e.streams[0];
+    const remoteV = document.getElementById('remote-video');
+    remoteV.srcObject = remoteStream;
   };
 
-  // connection state
+  // 9. Connection-state cleanup
   peerConnection.onconnectionstatechange = () => {
-    if (peerConnection.connectionState === 'connected') {
-      // connected, nothing
-    } else if (['disconnected','failed'].includes(peerConnection.connectionState)) {
+    if (peerConnection.connectionState !== 'connected') {
       endVideoCall();
       showCallEndedUI('Call disconnected');
     }
   };
 
-  // create offer
+  // 10. Send the offer
   const offer = await peerConnection.createOffer({ offerToReceiveVideo: true });
   await peerConnection.setLocalDescription(offer);
-
-  // send offer
   socket.emit('video-call-initiate', {
     offer,
     room,
@@ -410,7 +412,7 @@ async function startVideoCall() {
     caller: username
   });
 
-  // set timeout
+  // 11. Auto-hangup if no answer in 30s
   callTimeout = setTimeout(() => {
     if (!remoteStream) {
       endVideoCall();
@@ -419,73 +421,90 @@ async function startVideoCall() {
   }, 30000);
 }
 
+// ==== 2) handleIncomingCall ====
 async function handleIncomingCall({ offer, callId, caller }) {
-  if (peerConnection || isCallActive) {
+  // Only reject if we truly have an active call
+  if (isCallActive && peerConnection?.connectionState === 'connected') {
     socket.emit('reject-call', { room, callId, reason: 'busy' });
     return;
   }
 
+  // Ask user
   const accept = confirm(`${caller} is calling. Accept?`);
   if (!accept) {
     socket.emit('reject-call', { room, callId });
     return;
   }
 
+  // Now become busy
   isCallActive  = true;
   currentCallId = callId;
   peerConnection = new RTCPeerConnection(ICE_CONFIG);
 
-  // get local media
+  // Get media & show UI
   localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
   showVideoCallUI();
-  document.getElementById('local-video').srcObject = localStream;
+  const localV = document.getElementById('local-video');
+  localV.muted     = true;
+  localV.srcObject = localStream;
 
-  // add tracks
-  localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+  // Add tracks
+  localStream.getTracks().forEach(track =>
+    peerConnection.addTrack(track, localStream)
+  );
 
+  // ICE & track handlers
   peerConnection.onicecandidate = e => {
     if (e.candidate) {
       socket.emit('ice-candidate', { candidate: e.candidate, room, callId });
     }
   };
-
-  peerConnection.ontrack = event => {
-    remoteStream = event.streams[0];
+  peerConnection.ontrack = e => {
+    remoteStream = e.streams[0];
     document.getElementById('remote-video').srcObject = remoteStream;
   };
-
   peerConnection.onconnectionstatechange = () => {
-    if (['disconnected','failed'].includes(peerConnection.connectionState)) {
+    if (peerConnection.connectionState !== 'connected') {
       endVideoCall();
       showCallEndedUI('Call disconnected');
     }
   };
 
-  // answer
+  // Finish signaling
   await peerConnection.setRemoteDescription(offer);
   const answer = await peerConnection.createAnswer();
   await peerConnection.setLocalDescription(answer);
   socket.emit('video-answer', { answer, room, callId });
 
-  // flush ICE queue
+  // Flush any early ICE candidates
   iceQueue.forEach(c => peerConnection.addIceCandidate(c));
   iceQueue = [];
 }
 
+// ==== 3) endVideoCall ====
 function endVideoCall() {
-  // stop media
+  // 1. Stop all streams
   [localStream, remoteStream].forEach(s => {
     if (s) s.getTracks().forEach(t => t.stop());
   });
-  peerConnection?.close();
-  peerConnection = null;
 
-  hideCallUI();
-  socket.emit('end-call', { room, callId: currentCallId });
+  // 2. Tear down the RTCPeerConnection
+  if (peerConnection) {
+    peerConnection.close();
+    peerConnection = null;
+  }
 
+  // 3. Reset flags + queue
   isCallActive  = false;
-  currentCallId = null;
+  clearTimeout(callTimeout);
   iceQueue      = [];
+
+  // 4. Hide the overlay
+  hideCallUI();
+
+  // 5. Notify the server
+  socket.emit('end-call', { room, callId: currentCallId });
+  currentCallId = null;
 }
 
 // ==============================
