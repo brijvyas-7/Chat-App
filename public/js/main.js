@@ -282,12 +282,12 @@ async function handleIncomingCall({ offer, callId, caller }) {
     if (e.candidate) socket.emit('ice-candidate', { candidate: e.candidate, room, callId });
   };
   peerConnection.ontrack = e => {
-    if (!remoteStream) {
-      remoteStream = e.streams[0];
-      const remoteV = document.getElementById('remote-video');
-      remoteV.srcObject = remoteStream;
-      remoteV.play().catch(() => {});
-    }
+  const remoteV = document.getElementById('remote-video');
+  if (remoteV.srcObject !== e.streams[0]) {
+    remoteStream = e.streams[0];
+    remoteV.srcObject = remoteStream;
+    remoteV.play().catch(() => {});
+  }
   };
   peerConnection.onconnectionstatechange = () => {
     const st = peerConnection.connectionState;
