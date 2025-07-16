@@ -254,7 +254,7 @@ async function startVideoCall() {
   }, 30000);
 }
 
-// Incoming Call
+// Incoming Call - FIXED VERSION
 async function handleIncomingCall({ offer, callId, caller }) {
   if (isCallActive && peerConnection?.connectionState === 'connected') {
     socket.emit('reject-call', { room, callId, reason: 'busy' });
@@ -271,43 +271,57 @@ async function handleIncomingCall({ offer, callId, caller }) {
   currentCallId = callId;
   peerConnection = new RTCPeerConnection(ICE_CONFIG);
 
+  // Show UI first to ensure video elements exist
   showVideoCallUI();
-  localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-  const localV = document.getElementById('local-video');
-  localV.srcObject = localStream;
-  localV.muted = true; localV.play().catch(() => {});
-  localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
+
+  // Set ontrack handler BEFORE setting remote description
+  peerConnection.ontrack = e => {
+    const remoteV = document.getElementById('remote-video');
+    if (e.streams && e.streams.length > 0) {
+      remoteStream = e.streams[0];
+      remoteV.srcObject = remoteStream;
+      remoteV.play().catch(e => console.error('Remote video play error:', e));
+    }
+  };
+
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    const localV = document.getElementById('local-video');
+    localV.srcObject = localStream;
+    localV.muted = true;
+    localV.play().catch(e => console.error('Local video play error:', e));
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+  } catch (err) {
+    console.error('Media access error:', err);
+    endVideoCall();
+    return;
+  }
 
   peerConnection.onicecandidate = e => {
     if (e.candidate) socket.emit('ice-candidate', { candidate: e.candidate, room, callId });
   };
-  peerConnection.ontrack = e => {
-  if (!remoteStream) {
-    remoteStream = new MediaStream();
-    const remoteV = document.getElementById('remote-video');
-    remoteV.srcObject = remoteStream;
-    remoteV.play().catch(() => {});
-  }
-  e.streams[0]?.getTracks().forEach(track => {
-    if (!remoteStream.getTracks().includes(track)) {
-      remoteStream.addTrack(track);
-    }
-  });
-};
+  
   peerConnection.onconnectionstatechange = () => {
     const st = peerConnection.connectionState;
     if (['disconnected', 'failed', 'closed'].includes(st)) {
-      endVideoCall(); showCallEndedUI('Call disconnected');
+      endVideoCall(); 
+      showCallEndedUI('Call disconnected');
     }
   };
 
-  await peerConnection.setRemoteDescription(offer);
-  const answer = await peerConnection.createAnswer();
-  await peerConnection.setLocalDescription(answer);
-  socket.emit('video-answer', { answer, room, callId });
+  try {
+    await peerConnection.setRemoteDescription(offer);
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+    socket.emit('video-answer', { answer, room, callId });
 
-  iceQueue.forEach(c => peerConnection.addIceCandidate(c));
-  iceQueue = [];
+    // Process any queued ICE candidates
+    iceQueue.forEach(c => peerConnection.addIceCandidate(c).catch(console.error));
+    iceQueue = [];
+  } catch (err) {
+    console.error('Call setup error:', err);
+    endVideoCall();
+  }
 }
 
 // End Call
