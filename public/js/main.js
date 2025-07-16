@@ -1208,4 +1208,4 @@ function init() {
 }
 
 // Start the application
-init(); is this fixed version? This code have not providing caller user , calling video call screen and accepting user their videocall screen. After acepting call both user show only chat and hearing sounds only no videocall view comming for both users pels fix
+init(); 
