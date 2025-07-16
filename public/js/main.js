@@ -159,20 +159,125 @@ function showCallingUI() {
   document.getElementById('cancel-call-btn').onclick = endVideoCall;
   callSound.loop = true; callSound.play().catch(() => {});
 }
+// ... [All previous code remains exactly the same until the video call functions]
+
+// Video UI - Modified to ensure proper element creation
 function showVideoCallUI() {
-  callSound.pause(); clearTimeout(callTimeout);
-  videoCallContainer.innerHTML = `<div class="video-container">
+  callSound.pause(); 
+  clearTimeout(callTimeout);
+  
+  // Destroy and recreate video elements to ensure clean state
+  const container = document.createElement('div');
+  container.className = 'video-container';
+  container.innerHTML = `
     <video id="remote-video" autoplay playsinline class="remote-video"></video>
     <video id="local-video" autoplay playsinline muted class="local-video"></video>
-  </div><div class="video-controls">
-    <button id="toggle-audio-btn" class="control-btn audio-btn"><i class="fas fa-microphone"></i></button>
-    <button id="end-call-btn" class="control-btn end-btn"><i class="fas fa-phone-slash"></i></button>
-    <button id="toggle-video-btn" class="control-btn video-btn"><i class="fas fa-video"></i></button>
-  </div>`;
+    <div class="video-controls">
+      <button id="toggle-audio-btn" class="control-btn audio-btn">
+        <i class="fas fa-microphone${isAudioMuted ? '-slash' : ''}"></i>
+      </button>
+      <button id="end-call-btn" class="control-btn end-btn">
+        <i class="fas fa-phone-slash"></i>
+      </button>
+      <button id="toggle-video-btn" class="control-btn video-btn">
+        <i class="fas fa-video${isVideoOff ? '-slash' : ''}"></i>
+      </button>
+    </div>
+  `;
+  
+  videoCallContainer.innerHTML = '';
+  videoCallContainer.appendChild(container);
+  videoCallContainer.classList.remove('d-none');
+
+  // Store references to video elements
+  const localV = document.getElementById('local-video');
+  const remoteV = document.getElementById('remote-video');
+
+  // Setup controls
   document.getElementById('toggle-audio-btn').onclick = toggleAudio;
   document.getElementById('toggle-video-btn').onclick = toggleVideo;
   document.getElementById('end-call-btn').onclick = endVideoCall;
+
+  return { localV, remoteV };
 }
+
+// Modified incoming call handler
+async function handleIncomingCall({ offer, callId, caller }) {
+  if (isCallActive) {
+    socket.emit('reject-call', { room, callId, reason: 'busy' });
+    return;
+  }
+
+  const accept = confirm(`${caller} is calling. Accept?`);
+  if (!accept) {
+    socket.emit('reject-call', { room, callId });
+    return;
+  }
+
+  isCallActive = true;
+  currentCallId = callId;
+  
+  // Initialize UI first
+  const { localV, remoteV } = showVideoCallUI();
+  
+  try {
+    // Create peer connection
+    peerConnection = new RTCPeerConnection(ICE_CONFIG);
+    
+    // Setup stream handlers BEFORE any negotiation
+    peerConnection.ontrack = (e) => {
+      if (e.streams && e.streams[0]) {
+        remoteStream = e.streams[0];
+        remoteV.srcObject = remoteStream;
+        remoteV.onloadedmetadata = () => remoteV.play().catch(e => console.log('Play error:', e));
+      }
+    };
+
+    // Get local media
+    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    localV.srcObject = localStream;
+    localV.onloadedmetadata = () => localV.play().catch(e => console.log('Local play error:', e));
+    
+    // Add tracks to connection
+    localStream.getTracks().forEach(track => {
+      peerConnection.addTrack(track, localStream);
+    });
+
+    // Setup ICE candidate handler
+    peerConnection.onicecandidate = (e) => {
+      if (e.candidate) {
+        socket.emit('ice-candidate', { candidate: e.candidate, room, callId });
+      }
+    };
+
+    // Handle connection state changes
+    peerConnection.onconnectionstatechange = () => {
+      if (['disconnected', 'failed', 'closed'].includes(peerConnection.connectionState)) {
+        endVideoCall();
+        showCallEndedUI('Call ended');
+      }
+    };
+
+    // Process the offer
+    await peerConnection.setRemoteDescription(offer);
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+    socket.emit('video-answer', { answer, room, callId });
+
+    // Process any queued ICE candidates
+    iceQueue.forEach(candidate => {
+      peerConnection.addIceCandidate(candidate).catch(e => console.log('ICE error:', e));
+    });
+    iceQueue = [];
+
+  } catch (err) {
+    console.error('Call setup failed:', err);
+    endVideoCall();
+    showCallEndedUI('Call failed to start');
+  }
+}
+
+// ... [Rest of the original code remains exactly the same]
 function hideCallUI() {
   videoCallContainer.classList.add('d-none');
   callSound.pause(); clearTimeout(callTimeout);
@@ -276,13 +381,15 @@ async function handleIncomingCall({ offer, callId, caller }) {
 
   // Set ontrack handler BEFORE setting remote description
   peerConnection.ontrack = e => {
+  if (!remoteStream) {
+    remoteStream = new MediaStream();
     const remoteV = document.getElementById('remote-video');
-    if (e.streams && e.streams.length > 0) {
-      remoteStream = e.streams[0];
-      remoteV.srcObject = remoteStream;
-      remoteV.play().catch(e => console.error('Remote video play error:', e));
-    }
-  };
+    remoteV.srcObject = remoteStream;
+    remoteV.play().catch(err => console.error('Remote video play error:', err));
+  }
+
+  e.track && remoteStream.addTrack(e.track);
+};
 
   try {
     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
