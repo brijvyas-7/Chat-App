@@ -1,4 +1,4 @@
-// ✅ Complete Video/Voice Chat with Multi-User Support & Mirror Mode
+// ✅ Complete Chat Application with Video/Voice Calling
 const socket = io({ reconnection: true, reconnectionAttempts: 5, reconnectionDelay: 1000 });
 
 // DOM Elements
@@ -15,11 +15,15 @@ const videoCallBtn = document.getElementById('video-call-btn');
 const voiceCallBtn = document.getElementById('voice-call-btn');
 const endCallBtn = document.getElementById('end-call-btn');
 const videoCallContainer = document.getElementById('video-call-container');
+
+// Create video grid
 const videoGrid = document.createElement('div');
 videoGrid.id = 'video-grid';
 videoCallContainer.appendChild(videoGrid);
 
+// Create local video element
 const localVideo = document.createElement('video');
+localVideo.id = 'local-video';
 localVideo.muted = true;
 localVideo.className = 'local-video';
 videoGrid.appendChild(localVideo);
@@ -62,18 +66,31 @@ const ICE_CONFIG = {
 const uuidv4 = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
   const r = Math.random() * 16 | 0;
   return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-});
+};
 
 // ======================
 // UI Functions
 // ======================
 
-// Dark Mode
-function initDarkMode() {
+function initializeUI() {
+  // Set room name
+  roomNameElem.textContent = room || 'Unknown Room';
+  
+  // Initialize buttons
+  videoCallBtn.style.display = 'block';
+  voiceCallBtn.style.display = 'block';
+  endCallBtn.style.display = 'none';
+  
+  // Initialize theme
   const isDark = localStorage.getItem('darkMode') === 'true';
   document.body.classList.toggle('dark', isDark);
   chatMessages.classList.toggle('dark-bg', isDark);
+  
+  // Initialize mute button
+  muteBtn.innerHTML = isMuted ? '<i class="fas fa-bell-slash"></i>' : '<i class="fas fa-bell"></i>';
 }
+
+// Dark Mode
 themeBtn.onclick = () => {
   const isDark = !document.body.classList.toggle('dark');
   localStorage.setItem('darkMode', isDark);
@@ -86,7 +103,6 @@ muteBtn.onclick = () => {
   localStorage.setItem('isMuted', isMuted);
   muteBtn.innerHTML = isMuted ? '<i class="fas fa-bell-slash"></i>' : '<i class="fas fa-bell"></i>';
 };
-muteBtn.innerHTML = isMuted ? '<i class="fas fa-bell-slash"></i>' : '<i class="fas fa-bell"></i>';
 
 // ======================
 // Chat Functions
@@ -174,7 +190,7 @@ function showCallingUI() {
       <button id="cancel-call-btn" class="btn btn-danger"><i class="fas fa-phone-slash"></i> Cancel</button>
     </div>
   `;
-  videoCallContainer.classList.remove('d-none');
+  videoCallContainer.style.display = 'flex';
   document.getElementById('cancel-call-btn').onclick = endCall;
   callSound.loop = true;
   callSound.play().catch(() => {});
@@ -204,25 +220,26 @@ function showCallUI() {
     </div>
   `;
 
-  videoCallContainer.classList.remove('d-none');
+  videoCallContainer.style.display = 'flex';
 
-  // Setup control handlers
+  // Reinitialize local video
+  const localV = document.getElementById('local-video');
+  if (localV && callType === 'video') {
+    localV.srcObject = localStream;
+    localV.style.transform = 'scaleX(-1)';
+    localV.play().catch(e => console.error('Local video play error:', e));
+  }
+
+  // Setup controls
   document.getElementById('toggle-audio-btn').onclick = toggleAudio;
   if (callType === 'video') {
     document.getElementById('toggle-video-btn').onclick = toggleVideo;
   }
   document.getElementById('end-call-btn').onclick = endCall;
-
-  if (callType === 'video') {
-    const localV = document.getElementById('local-video');
-    localV.srcObject = localStream;
-    localV.style.transform = 'scaleX(-1)';
-    localV.play().catch(e => console.error('Local video play error:', e));
-  }
 }
 
 function hideCallUI() {
-  videoCallContainer.classList.add('d-none');
+  videoCallContainer.style.display = 'none';
   callSound.pause();
   clearTimeout(callTimeout);
 }
@@ -240,7 +257,6 @@ function showCallEndedUI(msg) {
   document.getElementById('close-alert-btn').onclick = () => div.remove();
 }
 
-// Media Control Functions
 function updateMediaButtons() {
   const aBtn = document.getElementById('toggle-audio-btn');
   if (aBtn) aBtn.innerHTML = `<i class="fas fa-microphone${isAudioMuted ? '-slash' : ''}"></i>`;
@@ -266,12 +282,10 @@ function toggleVideo() {
   updateMediaButtons();
 }
 
-// Call Management
 async function startCall(type) {
   if (isCallActive) return;
   
   try {
-    // Test permissions first
     const constraints = {
       audio: true,
       video: type === 'video' ? {
@@ -382,33 +396,28 @@ function setupPeerConnection(peerId, remoteUsername, remoteCallType) {
   const pc = new RTCPeerConnection(ICE_CONFIG);
   peers[peerId] = pc;
 
-  // Add local tracks
   localStream.getTracks().forEach(track => {
     pc.addTrack(track, localStream);
   });
 
-  // ICE Candidate handling
   pc.onicecandidate = e => {
     if (e.candidate) {
       socket.emit('ice-candidate', { candidate: e.candidate, peerId, room, callId: currentCallId });
     }
   };
 
-  // Remote stream handling
   pc.ontrack = e => {
     if (!e.streams || e.streams.length === 0) return;
     
     if (remoteCallType === 'video') {
       addRemoteStream(peerId, e.streams[0], remoteUsername);
     } else {
-      // For voice calls, just play the audio
       const audio = new Audio();
       audio.srcObject = e.streams[0];
       audio.play().catch(e => console.error('Audio play error:', e));
     }
   };
 
-  // Connection state handling
   pc.onconnectionstatechange = () => {
     if (['disconnected', 'failed'].includes(pc.connectionState)) {
       if (remoteCallType === 'video') {
@@ -448,17 +457,14 @@ function removeVideoElement(peerId) {
 }
 
 function endCall() {
-  // Close all peer connections
   Object.values(peers).forEach(peer => peer.close());
   Object.keys(peers).forEach(peerId => removeVideoElement(peerId));
   
-  // Clean up local stream
   if (localStream) {
     localStream.getTracks().forEach(track => track.stop());
     localStream = null;
   }
 
-  // Reset state
   isCallActive = false;
   callType = null;
   currentCallId = null;
@@ -548,8 +554,10 @@ socket.on('reject-call', ({ reason }) => {
 });
 
 // ======================
-// Event Listeners
+// Initialization
 // ======================
+
+initializeUI();
 
 // Form submit
 document.getElementById('chat-form').onsubmit = e => {
@@ -563,9 +571,9 @@ document.getElementById('chat-form').onsubmit = e => {
 };
 
 // Call buttons
-videoCallBtn.onclick = () => startCall('video');
-voiceCallBtn.onclick = () => startCall('voice');
-endCallBtn.onclick = endCall;
+videoCallBtn.addEventListener('click', () => startCall('video'));
+voiceCallBtn.addEventListener('click', () => startCall('voice'));
+endCallBtn.addEventListener('click', endCall);
 
 // Cleanup on exit
 window.addEventListener('beforeunload', () => {
@@ -574,9 +582,8 @@ window.addEventListener('beforeunload', () => {
   }
 });
 
-// Initialize
-(function init() {
-  if (!username || !room) return alert('Missing username or room!');
-  initDarkMode();
-  roomNameElem.textContent = room;
-})();
+// Final check
+if (!username || !room) {
+  alert('Missing username or room!');
+  window.location.href = '/';
+}
