@@ -983,4 +983,40 @@ header {
   }
 }
 
+/* Ensure chat header elements are visible */
+.chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 15px;
+  background: #2c3e50;
+  color: white;
+}
+
+.room-name {
+  font-size: 1.2rem;
+  font-weight: bold;
+}
+
+/* Call buttons container */
+.call-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+/* Video call container */
+#video-call-container {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  z-index: 1000;
+  flex-direction: column;
+}
+
+/* Rest of your existing CSS... */
+
 
