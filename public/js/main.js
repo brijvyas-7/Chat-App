@@ -1,44 +1,26 @@
-// ✅ Fixed WebRTC Implementation - Proper Video Display & UI Positioning
+// ✅ Complete Video/Voice Chat with Multi-User Support
 const socket = io({ reconnection: true, reconnectionAttempts: 5, reconnectionDelay: 1000 });
 
 // DOM Elements
 const msgInput = document.getElementById('msg');
 const chatMessages = document.getElementById('chat-messages');
-const replyPreview = document.getElementById('reply-preview');
-const replyUserElem = document.getElementById('reply-user');
-const replyTextElem = document.getElementById('reply-text');
-const cancelReplyBtn = document.getElementById('cancel-reply');
-const themeBtn = document.getElementById('theme-toggle');
-const muteBtn = document.getElementById('mute-toggle');
-const roomNameElem = document.getElementById('room-name');
+const videoGrid = document.getElementById('video-grid');
 const videoCallBtn = document.getElementById('video-call-btn');
-const videoCallContainer = document.getElementById('video-call-container');
+const voiceCallBtn = document.getElementById('voice-call-btn');
+const endCallBtn = document.getElementById('end-call-btn');
+const localVideo = document.createElement('video');
+localVideo.muted = true;
+localVideo.className = 'local-video';
 
-// Audio Elements
-const notificationSound = new Audio('/sounds/notification.mp3');
-const callSound = new Audio('/sounds/call.mp3');
-
-// Query Params
+// State Management
+const peers = {};
+let localStream;
+let isCallActive = false;
+let callType = null; // 'video' or 'voice'
+let isMuted = localStorage.getItem('isMuted') === 'true';
 const { username, room } = Qs.parse(location.search, { ignoreQueryPrefix: true }) || {};
 
-// State Variables
-let replyTo = null;
-let isMuted = localStorage.getItem('isMuted') === 'true';
-let lastTypingUpdate = 0;
-const SWIPE_THRESHOLD = 60;
-
-// WebRTC Variables
-let peerConnection = null;
-let localStream = null;
-let remoteStream = null;
-let currentCallId = null;
-let callTimeout = null;
-let isCallActive = false;
-let iceQueue = [];
-let isAudioMuted = false;
-let isVideoOff = false;
-
-// ICE Configuration
+// WebRTC Configuration
 const ICE_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -48,46 +30,271 @@ const ICE_CONFIG = {
   iceCandidatePoolSize: 10
 };
 
-// Helper Functions
-const uuidv4 = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-  const r = Math.random() * 16 | 0;
-  return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-});
+// Initialize
+(function init() {
+  if (!username || !room) return alert('Missing username or room!');
+  document.getElementById('room-name').textContent = room;
+  videoGrid.appendChild(localVideo);
+  setupEventListeners();
+})();
+
+// ======================
+// Core Call Functions
+// ======================
+
+async function startCall(type) {
+  if (isCallActive) return;
+  
+  try {
+    // Get media based on call type
+    localStream = await navigator.mediaDevices.getUserMedia({ 
+      video: type === 'video' ? { 
+        facingMode: 'user',
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      } : false,
+      audio: true
+    });
+
+    callType = type;
+    isCallActive = true;
+    
+    // Setup UI based on call type
+    if (type === 'video') {
+      localVideo.style.transform = 'scaleX(-1)';
+      localVideo.srcObject = localStream;
+      localVideo.style.display = 'block';
+    } else {
+      localVideo.style.display = 'none';
+    }
+
+    socket.emit('join-call', { room, username, callType: type });
+    toggleCallUI(true);
+  } catch (err) {
+    console.error('Media access failed:', err);
+    alert(`Could not access ${type === 'video' ? 'camera' : 'microphone'}`);
+  }
+}
+
+function endCall() {
+  // Close all peer connections
+  Object.values(peers).forEach(peer => peer.close());
+  Object.keys(peers).forEach(peerId => removeVideoElement(peerId));
+  
+  // Clean up local stream
+  if (localStream) {
+    localStream.getTracks().forEach(track => track.stop());
+    localVideo.srcObject = null;
+  }
+  
+  socket.emit('leave-call', { room });
+  isCallActive = false;
+  callType = null;
+  toggleCallUI(false);
+}
+
+function setupPeerConnection(peerId, remoteUsername, remoteCallType) {
+  const pc = new RTCPeerConnection(ICE_CONFIG);
+  peers[peerId] = pc;
+
+  // Add local tracks
+  localStream.getTracks().forEach(track => {
+    pc.addTrack(track, localStream);
+  });
+
+  // ICE Candidate handling
+  pc.onicecandidate = e => {
+    if (e.candidate) {
+      socket.emit('ice-candidate', { candidate: e.candidate, peerId, room });
+    }
+  };
+
+  // Remote stream handling
+  pc.ontrack = e => {
+    if (!e.streams || e.streams.length === 0) return;
+    
+    if (remoteCallType === 'video') {
+      addRemoteStream(peerId, e.streams[0], remoteUsername);
+    } else {
+      // Voice-only call - just play audio
+      const audio = new Audio();
+      audio.srcObject = e.streams[0];
+      audio.play().catch(console.error);
+    }
+  };
+
+  // Connection state handling
+  pc.onconnectionstatechange = () => {
+    if (['disconnected', 'failed'].includes(pc.connectionState)) {
+      removeVideoElement(peerId);
+      delete peers[peerId];
+    }
+  };
+
+  return pc;
+}
 
 // ======================
 // UI Functions
 // ======================
 
-// Dark Mode
-function initDarkMode() {
-  const isDark = localStorage.getItem('darkMode') === 'true';
-  document.body.classList.toggle('dark', isDark);
-  chatMessages.classList.toggle('dark-bg', isDark);
+function addRemoteStream(peerId, stream, username) {
+  if (document.getElementById(`video-${peerId}`)) return;
+
+  const videoContainer = document.createElement('div');
+  videoContainer.id = `video-${peerId}`;
+  videoContainer.className = 'remote-video-container';
+  
+  const video = document.createElement('video');
+  video.autoplay = true;
+  video.playsInline = true;
+  video.srcObject = stream;
+  
+  const usernameLabel = document.createElement('div');
+  usernameLabel.className = 'username-label';
+  usernameLabel.textContent = username || `User ${peerId.slice(0, 5)}`;
+  
+  videoContainer.appendChild(video);
+  videoContainer.appendChild(usernameLabel);
+  videoGrid.appendChild(videoContainer);
 }
-themeBtn.onclick = () => {
-  const isDark = !document.body.classList.toggle('dark');
-  localStorage.setItem('darkMode', isDark);
-  chatMessages.classList.toggle('dark-bg', isDark);
-};
 
-// Mute Toggle
-muteBtn.onclick = () => {
-  isMuted = !isMuted;
-  localStorage.setItem('isMuted', isMuted);
-  muteBtn.innerHTML = isMuted ? '<i class="fas fa-bell-slash"></i>' : '<i class="fas fa-bell"></i>';
-};
-muteBtn.innerHTML = isMuted ? '<i class="fas fa-bell-slash"></i>' : '<i class="fas fa-bell"></i>';
+function removeVideoElement(peerId) {
+  const elem = document.getElementById(`video-${peerId}`);
+  if (elem) elem.remove();
+}
+
+function toggleCallUI(callActive) {
+  videoCallBtn.style.display = callActive ? 'none' : 'block';
+  voiceCallBtn.style.display = callActive ? 'none' : 'block';
+  endCallBtn.style.display = callActive ? 'block' : 'none';
+}
 
 // ======================
-// Chat Functions
+// Socket Event Handlers
 // ======================
 
-// Reply UI
-cancelReplyBtn.onclick = e => {
-  e.stopPropagation();
-  replyTo = null;
-  replyPreview.classList.add('d-none');
-};
+function setupSocketEvents() {
+  // Connection
+  socket.on('connect', () => socket.emit('joinRoom', { username, room }));
+
+  // Chat messages
+  socket.on('message', msg => {
+    if (msg.username !== username && !isMuted) {
+      new Audio('/sounds/notification.mp3').play().catch(() => {});
+    }
+    addMessage(msg);
+  });
+
+  // Call management
+  socket.on('user-joined', async ({ peerId, username: remoteUsername, callType: remoteCallType }) => {
+    if (peerId === socket.id || !localStream) return;
+    
+    const pc = setupPeerConnection(peerId, remoteUsername, remoteCallType);
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit('offer', { offer, peerId, room, callType });
+    } catch (err) {
+      console.error('Offer creation error:', err);
+    }
+  });
+
+  socket.on('offer', async ({ offer, peerId, username: remoteUsername, callType: remoteCallType }) => {
+    if (!localStream) return;
+    
+    const pc = setupPeerConnection(peerId, remoteUsername, remoteCallType);
+    try {
+      await pc.setRemoteDescription(offer);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      socket.emit('answer', { answer, peerId, room, callType });
+    } catch (err) {
+      console.error('Answer handling error:', err);
+    }
+  });
+
+  socket.on('answer', async ({ answer, peerId }) => {
+    const pc = peers[peerId];
+    if (pc) {
+      try {
+        await pc.setRemoteDescription(answer);
+      } catch (err) {
+        console.error('Answer processing error:', err);
+      }
+    }
+  });
+
+  socket.on('ice-candidate', async ({ candidate, peerId }) => {
+    const pc = peers[peerId];
+    if (pc && candidate) {
+      try {
+        await pc.addIceCandidate(candidate);
+      } catch (err) {
+        console.error('ICE candidate error:', err);
+      }
+    }
+  });
+
+  socket.on('user-left', ({ peerId }) => {
+    if (peers[peerId]) {
+      peers[peerId].close();
+      delete peers[peerId];
+    }
+    removeVideoElement(peerId);
+  });
+
+  // Typing indicators
+  socket.on('showTyping', ({ username: u }) => u !== username && showTypingIndicator(u));
+  socket.on('stopTyping', () => document.querySelectorAll('.typing-indicator').forEach(el => el.remove()));
+}
+
+// ======================
+// Event Listeners
+// ======================
+
+function setupEventListeners() {
+  // Call buttons
+  videoCallBtn.addEventListener('click', () => startCall('video'));
+  voiceCallBtn.addEventListener('click', () => startCall('voice'));
+  endCallBtn.addEventListener('click', endCall);
+  
+  // Theme toggle
+  themeBtn.addEventListener('click', () => {
+    const isDark = !document.body.classList.toggle('dark');
+    localStorage.setItem('darkMode', isDark);
+    chatMessages.classList.toggle('dark-bg', isDark);
+  });
+
+  // Mute toggle
+  muteBtn.addEventListener('click', () => {
+    isMuted = !isMuted;
+    localStorage.setItem('isMuted', isMuted);
+    muteBtn.innerHTML = isMuted ? '<i class="fas fa-bell-slash"></i>' : '<i class="fas fa-bell"></i>';
+  });
+
+  // Chat form
+  document.getElementById('chat-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const text = msgInput.value.trim();
+    if (!text) return;
+    socket.emit('chatMessage', { text, replyTo, room, username });
+    msgInput.value = '';
+    replyTo = null;
+    replyPreview.classList.add('d-none');
+  });
+
+  // Cleanup on exit
+  window.addEventListener('beforeunload', () => {
+    if (isCallActive) {
+      socket.emit('leave-call', { room });
+    }
+  });
+}
+
+// ======================
+// Chat Functions (Preserved)
+// ======================
 
 function setupReply(user, msgID, text) {
   replyTo = { id: msgID, username: user, text };
@@ -131,17 +338,6 @@ function addMessage(msg) {
   setTimeout(() => chatMessages.scrollTo({ top: chatMessages.scrollHeight, behavior: 'smooth' }), 20);
 }
 
-// Typing Indicators
-msgInput.oninput = () => {
-  const now = Date.now();
-  if (now - lastTypingUpdate > 1000) {
-    socket.emit('typing', { room });
-    lastTypingUpdate = now;
-  }
-  clearTimeout(window._stopTyping);
-  window._stopTyping = setTimeout(() => socket.emit('stopTyping', { room }), 2000);
-};
-
 function showTypingIndicator(user) {
   if (!document.querySelector('.typing-indicator')) {
     const d = document.createElement('div');
@@ -152,359 +348,5 @@ function showTypingIndicator(user) {
   }
 }
 
-// ======================
-// Video Call Functions
-// ======================
-
-// Video UI Functions
-function showCallingUI() {
-  videoCallContainer.innerHTML = `
-    <div class="calling-ui">
-      <div class="calling-spinner"></div>
-      <div class="calling-text">Calling...</div>
-      <button id="cancel-call-btn" class="btn btn-danger"><i class="fas fa-phone-slash"></i> Cancel</button>
-    </div>
-  `;
-  videoCallContainer.classList.remove('d-none');
-  document.getElementById('cancel-call-btn').onclick = endVideoCall;
-  callSound.loop = true; 
-  callSound.play().catch(() => {});
-}
-
-function showVideoCallUI() {
-  callSound.pause();
-  clearTimeout(callTimeout);
-
-  videoCallContainer.innerHTML = `
-    <div class="video-call-active">
-      <div class="video-grid">
-        <video id="remote-video" autoplay playsinline class="remote-video"></video>
-        <video id="local-video" autoplay playsinline muted class="local-video"></video>
-      </div>
-      <div class="video-controls">
-        <button id="toggle-audio-btn" class="control-btn audio-btn">
-          <i class="fas fa-microphone${isAudioMuted ? '-slash' : ''}"></i>
-        </button>
-        <button id="end-call-btn" class="control-btn end-btn">
-          <i class="fas fa-phone-slash"></i>
-        </button>
-        <button id="toggle-video-btn" class="control-btn video-btn">
-          <i class="fas fa-video${isVideoOff ? '-slash' : ''}"></i>
-        </button>
-      </div>
-    </div>
-  `;
-
-  videoCallContainer.classList.remove('d-none');
-
-  // Setup control handlers
-  document.getElementById('toggle-audio-btn').onclick = toggleAudio;
-  document.getElementById('toggle-video-btn').onclick = toggleVideo;
-  document.getElementById('end-call-btn').onclick = endVideoCall;
-
-  return {
-    localV: document.getElementById('local-video'),
-    remoteV: document.getElementById('remote-video')
-  };
-}
-
-function hideCallUI() {
-  videoCallContainer.classList.add('d-none');
-  callSound.pause();
-  clearTimeout(callTimeout);
-}
-
-function showCallEndedUI(msg) {
-  const div = document.createElement('div');
-  div.className = 'call-ended-alert';
-  div.innerHTML = `
-    <div class="alert-content">
-      <p>${msg}</p>
-      <button id="close-alert-btn" class="btn btn-primary">OK</button>
-    </div>
-  `;
-  document.body.appendChild(div);
-  document.getElementById('close-alert-btn').onclick = () => div.remove();
-}
-
-// Media Control Functions
-function updateMediaButtons() {
-  const aBtn = document.getElementById('toggle-audio-btn');
-  const vBtn = document.getElementById('toggle-video-btn');
-  if (aBtn) aBtn.innerHTML = `<i class="fas fa-microphone${isAudioMuted ? '-slash' : ''}"></i>`;
-  if (vBtn) vBtn.innerHTML = `<i class="fas fa-video${isVideoOff ? '-slash' : ''}"></i>`;
-}
-
-function toggleAudio() {
-  isAudioMuted = !isAudioMuted;
-  if (localStream) {
-    localStream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
-  }
-  updateMediaButtons();
-}
-
-function toggleVideo() {
-  isVideoOff = !isVideoOff;
-  if (localStream) {
-    localStream.getVideoTracks().forEach(t => t.enabled = !isVideoOff);
-  }
-  updateMediaButtons();
-}
-
-// Call Management
-async function startVideoCall() {
-  if (isCallActive) return;
-  
-  try {
-    // Test permissions first
-    const test = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    test.getTracks().forEach(t => t.stop());
-  } catch {
-    return alert('Please allow camera and microphone access to start a call.');
-  }
-
-  isCallActive = true;
-  currentCallId = uuidv4();
-  peerConnection = new RTCPeerConnection(ICE_CONFIG);
-
-  showCallingUI();
-  const { localV } = showVideoCallUI();
-
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    localV.srcObject = localStream;
-    localV.play().catch(e => console.error('Local video play error:', e));
-
-    // Add tracks to connection
-    localStream.getTracks().forEach(track => {
-      peerConnection.addTrack(track, localStream);
-    });
-
-    // ICE Candidate handling
-    peerConnection.onicecandidate = e => {
-      if (e.candidate) {
-        socket.emit('ice-candidate', { candidate: e.candidate, room, callId: currentCallId });
-      }
-    };
-
-    // Remote stream handling
-    peerConnection.ontrack = e => {
-      if (!e.streams || e.streams.length === 0) return;
-      
-      const remoteV = document.getElementById('remote-video');
-      if (!remoteV.srcObject) {
-        remoteV.srcObject = e.streams[0];
-      } else {
-        e.streams[0].getTracks().forEach(track => {
-          if (!remoteV.srcObject.getTracks().some(t => t.id === track.id)) {
-            remoteV.srcObject.addTrack(track);
-          }
-        });
-      }
-      
-      remoteV.onloadedmetadata = () => {
-        remoteV.play().catch(e => console.error('Remote video play error:', e));
-      };
-    };
-
-    // Connection state handling
-    peerConnection.onconnectionstatechange = () => {
-      const state = peerConnection.connectionState;
-      if (['disconnected', 'failed', 'closed'].includes(state)) {
-        endVideoCall();
-        showCallEndedUI('Call disconnected');
-      }
-    };
-
-    // Create and send offer
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    socket.emit('video-call-initiate', { 
-      offer, 
-      room, 
-      callId: currentCallId, 
-      caller: username 
-    });
-
-    // Set timeout for no answer
-    callTimeout = setTimeout(() => {
-      if (!document.getElementById('remote-video')?.srcObject) {
-        endVideoCall();
-        showCallEndedUI('No answer');
-      }
-    }, 30000);
-
-  } catch (err) {
-    console.error('Call setup error:', err);
-    endVideoCall();
-    showCallEndedUI('Call failed to start');
-  }
-}
-
-async function handleIncomingCall({ offer, callId, caller }) {
-  if (isCallActive) {
-    socket.emit('reject-call', { room, callId, reason: 'busy' });
-    return;
-  }
-
-  const accept = confirm(`${caller} is calling. Accept?`);
-  if (!accept) {
-    socket.emit('reject-call', { room, callId });
-    return;
-  }
-
-  isCallActive = true;
-  currentCallId = callId;
-
-  try {
-    const { localV, remoteV } = showVideoCallUI();
-    peerConnection = new RTCPeerConnection(ICE_CONFIG);
-
-    // Setup remote stream handling
-    peerConnection.ontrack = e => {
-      if (!e.streams || e.streams.length === 0) return;
-      
-      if (!remoteV.srcObject) {
-        remoteV.srcObject = e.streams[0];
-      } else {
-        e.streams[0].getTracks().forEach(track => {
-          if (!remoteV.srcObject.getTracks().some(t => t.id === track.id)) {
-            remoteV.srcObject.addTrack(track);
-          }
-        });
-      }
-      
-      remoteV.onloadedmetadata = () => {
-        remoteV.play().catch(e => console.error('Remote video play error:', e));
-      };
-    };
-
-    // Get local media
-    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    localV.srcObject = localStream;
-    localV.play().catch(e => console.error('Local video play error:', e));
-
-    // Add local tracks
-    localStream.getTracks().forEach(track => {
-      peerConnection.addTrack(track, localStream);
-    });
-
-    // ICE Candidate handling
-    peerConnection.onicecandidate = e => {
-      if (e.candidate) {
-        socket.emit('ice-candidate', { candidate: e.candidate, room, callId });
-      }
-    };
-
-    // Connection state handling
-    peerConnection.onconnectionstatechange = () => {
-      const state = peerConnection.connectionState;
-      if (['disconnected', 'failed', 'closed'].includes(state)) {
-        endVideoCall();
-        showCallEndedUI('Call disconnected');
-      }
-    };
-
-    // Process the offer
-    await peerConnection.setRemoteDescription(offer);
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-    socket.emit('video-answer', { answer, room, callId });
-
-    // Process queued ICE candidates
-    iceQueue.forEach(candidate => {
-      peerConnection.addIceCandidate(candidate).catch(e => console.error('ICE error:', e));
-    });
-    iceQueue = [];
-
-  } catch (err) {
-    console.error('Call setup error:', err);
-    endVideoCall();
-    showCallEndedUI('Call failed to start');
-  }
-}
-
-function endVideoCall() {
-  if (localStream) {
-    localStream.getTracks().forEach(track => track.stop());
-    localStream = null;
-  }
-  
-  if (remoteStream) {
-    remoteStream.getTracks().forEach(track => track.stop());
-    remoteStream = null;
-  }
-
-  if (peerConnection) {
-    peerConnection.close();
-    peerConnection = null;
-  }
-
-  isCallActive = false;
-  currentCallId = null;
-  clearTimeout(callTimeout);
-  hideCallUI();
-  socket.emit('end-call', { room, callId: currentCallId });
-}
-
-// ======================
-// Socket Event Handlers
-// ======================
-
-socket.on('connect', () => socket.emit('joinRoom', { username, room }));
-socket.on('message', msg => {
-  if (msg.username !== username && !isMuted) notificationSound.play().catch(() => {});
-  addMessage(msg);
-});
-socket.on('showTyping', ({ username: u }) => u !== username && showTypingIndicator(u));
-socket.on('stopTyping', () => document.querySelectorAll('.typing-indicator').forEach(el => el.remove()));
-socket.on('incoming-call', handleIncomingCall);
-socket.on('video-answer', async ({ answer, callId }) => {
-  if (callId !== currentCallId || !peerConnection) return;
-  try {
-    await peerConnection.setRemoteDescription(answer);
-    iceQueue.forEach(c => peerConnection.addIceCandidate(c));
-    iceQueue = [];
-  } catch (err) {
-    console.error('Answer handling error:', err);
-  }
-});
-socket.on('ice-candidate', ({ candidate, callId }) => {
-  if (callId !== currentCallId || !peerConnection) {
-    iceQueue.push(candidate);
-  } else {
-    peerConnection.addIceCandidate(candidate).catch(console.error);
-  }
-});
-socket.on('end-call', () => endVideoCall());
-socket.on('reject-call', ({ reason }) => {
-  endVideoCall();
-  showCallEndedUI(reason === 'busy' ? 'User is busy' : 'Call rejected');
-});
-
-// ======================
-// Event Listeners
-// ======================
-
-// Form submit
-document.getElementById('chat-form').onsubmit = e => {
-  e.preventDefault();
-  const text = msgInput.value.trim();
-  if (!text) return;
-  socket.emit('chatMessage', { text, replyTo, room });
-  msgInput.value = '';
-  replyTo = null;
-  replyPreview.classList.add('d-none');
-};
-
-// Initialize
-videoCallBtn.onclick = () => startVideoCall();
-window.addEventListener('beforeunload', () => {
-  if (isCallActive) socket.emit('end-call', { room, callId: currentCallId });
-});
-
-(function init() {
-  if (!username || !room) return alert('Missing username or room!');
-  initDarkMode();
-  roomNameElem.textContent = room;
-})();
+// Initialize everything
+setupSocketEvents();
