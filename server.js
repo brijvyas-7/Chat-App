@@ -21,7 +21,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const botName = 'ChatApp Bot';
 
-// WebRTC signaling state
+// Track active calls by room
 const activeCalls = {};
 
 io.on('connection', (socket) => {
@@ -114,82 +114,125 @@ io.on('connection', (socket) => {
   });
 
   /* ====================== */
-  /* VIDEO CALL HANDLERS */
+  /* ENHANCED CALL HANDLERS */
   /* ====================== */
 
-  // Handle call initiation
-  socket.on('video-call-initiate', ({ offer, room, callId, caller }) => {
+  // Handle call initiation (both audio and video)
+  socket.on('call-initiate', ({ room, callType, callId }) => {
+    const user = getCurrentUser(socket.id);
+    if (!user) return;
+
     if (!activeCalls[room]) {
       activeCalls[room] = {};
     }
     
     activeCalls[room][callId] = {
-      caller,
-      callee: null,
-      offer,
-      answer: null,
-      callerSocket: socket.id
+      callType,
+      participants: {
+        [user.username]: socket.id
+      },
+      offers: {},
+      answers: {},
+      iceCandidates: {}
     };
 
     // Notify other users in the room
     socket.to(room).emit('incoming-call', {
-      offer,
+      callType,
       callId,
-      caller
+      caller: user.username
     });
   });
 
-  // Handle call answer
-  // In your socket.on('video-answer', …) handler, before emitting back to the caller:
-socket.on('video-answer', ({ answer, room, callId }) => {
-  const call = activeCalls[room]?.[callId];
-  if (call) {
-    // 1) Register the callee's socket ID so ICE candidates can be forwarded:
-    call.calleeSocket = socket.id;
-
-    // 2) Then send the answer back:
-    call.answer = answer;
-    io.to(call.callerSocket).emit('video-answer', {
-      answer,
-      callId
-    });
-  }
-});
-
-  // Handle ICE candidates
-  socket.on('ice-candidate', ({ candidate, room, callId }) => {
+  // Handle call acceptance
+  socket.on('accept-call', ({ room, callId }) => {
+    const user = getCurrentUser(socket.id);
     const call = activeCalls[room]?.[callId];
-    if (call) {
-      const targetSocket = socket.id === call.callerSocket 
-        ? call.calleeSocket 
-        : call.callerSocket;
+    
+    if (call && user) {
+      // Add participant to the call
+      call.participants[user.username] = socket.id;
       
-      if (targetSocket) {
-        io.to(targetSocket).emit('ice-candidate', {
-          candidate,
-          callId
-        });
-      }
+      // Notify all participants about the new user
+      Object.entries(call.participants).forEach(([username, participantSocket]) => {
+        if (participantSocket !== socket.id) {
+          io.to(participantSocket).emit('user-joined-call', {
+            userId: user.username,
+            callId
+          });
+        }
+      });
     }
   });
 
-  // Handle call end
-  socket.on('end-call', ({ room, callId }) => {
+  // Handle offer exchange between peers
+  socket.on('offer', ({ offer, room, callId, targetUser }) => {
     const call = activeCalls[room]?.[callId];
-    if (call) {
-      // Notify other participant
-      const targetSocket = socket.id === call.callerSocket 
-        ? call.calleeSocket 
-        : call.callerSocket;
-      
-      if (targetSocket) {
-        io.to(targetSocket).emit('end-call', { callId });
+    if (call && call.participants[targetUser]) {
+      call.offers[targetUser] = offer;
+      io.to(call.participants[targetUser]).emit('offer', {
+        offer,
+        callId,
+        userId: getCurrentUser(socket.id)?.username
+      });
+    }
+  });
+
+  // Handle answer exchange between peers
+  socket.on('answer', ({ answer, room, callId, targetUser }) => {
+    const call = activeCalls[room]?.[callId];
+    if (call && call.participants[targetUser]) {
+      call.answers[targetUser] = answer;
+      io.to(call.participants[targetUser]).emit('answer', {
+        answer,
+        callId,
+        userId: getCurrentUser(socket.id)?.username
+      });
+    }
+  });
+
+  // Handle ICE candidates exchange
+  socket.on('ice-candidate', ({ candidate, room, callId, targetUser }) => {
+    const call = activeCalls[room]?.[callId];
+    if (call && call.participants[targetUser]) {
+      // Queue candidate if we don't have the target user's socket yet
+      if (!call.iceCandidates[targetUser]) {
+        call.iceCandidates[targetUser] = [];
       }
+      call.iceCandidates[targetUser].push(candidate);
       
-      // Clean up
-      delete activeCalls[room][callId];
-      if (Object.keys(activeCalls[room]).length === 0) {
-        delete activeCalls[room];
+      // Forward to target user
+      io.to(call.participants[targetUser]).emit('ice-candidate', {
+        candidate,
+        callId,
+        userId: getCurrentUser(socket.id)?.username
+      });
+    }
+  });
+
+  // Handle user leaving a call
+  socket.on('leave-call', ({ room, callId }) => {
+    const user = getCurrentUser(socket.id);
+    const call = activeCalls[room]?.[callId];
+    
+    if (call && user) {
+      // Remove participant
+      delete call.participants[user.username];
+      delete call.offers[user.username];
+      delete call.answers[user.username];
+      delete call.iceCandidates[user.username];
+      
+      // Notify remaining participants
+      Object.entries(call.participants).forEach(([username, participantSocket]) => {
+        io.to(participantSocket).emit('user-left-call', {
+          userId: user.username,
+          callId
+        });
+      });
+      
+      // Clean up if no participants left
+      if (Object.keys(call.participants).length === 0) {
+        delete activeCalls[room][callId];
       }
     }
   });
@@ -197,11 +240,33 @@ socket.on('video-answer', ({ answer, room, callId }) => {
   // Handle call rejection
   socket.on('reject-call', ({ room, callId, reason }) => {
     const call = activeCalls[room]?.[callId];
-    if (call) {
+    const user = getCurrentUser(socket.id);
+    
+    if (call && user) {
       // Notify caller
-      io.to(call.callerSocket).emit('reject-call', { 
-        callId, 
-        reason: reason || 'rejected' 
+      const callerSocket = call.participants[call.caller];
+      if (callerSocket) {
+        io.to(callerSocket).emit('reject-call', { 
+          callId, 
+          reason: reason || 'rejected',
+          userId: user.username
+        });
+      }
+      
+      // Clean up if no other participants
+      if (Object.keys(call.participants).length <= 1) {
+        delete activeCalls[room][callId];
+      }
+    }
+  });
+
+  // Handle full call termination
+  socket.on('end-call', ({ room, callId }) => {
+    const call = activeCalls[room]?.[callId];
+    if (call) {
+      // Notify all participants
+      Object.values(call.participants).forEach(participantSocket => {
+        io.to(participantSocket).emit('end-call', { callId });
       });
       
       // Clean up
@@ -209,34 +274,46 @@ socket.on('video-answer', ({ answer, room, callId }) => {
     }
   });
 
-  // Disconnect
+  // Disconnect handler
   socket.on('disconnect', () => {
     const user = userLeave(socket.id);
     if (user) {
       // Clean up any active calls
       if (activeCalls[user.room]) {
-        Object.keys(activeCalls[user.room]).forEach(callId => {
-          const call = activeCalls[user.room][callId];
-          if (call.callerSocket === socket.id || call.calleeSocket === socket.id) {
-            const targetSocket = socket.id === call.callerSocket 
-              ? call.calleeSocket 
-              : call.callerSocket;
+        Object.entries(activeCalls[user.room]).forEach(([callId, call]) => {
+          if (call.participants[user.username]) {
+            // Notify other participants
+            Object.entries(call.participants).forEach(([username, participantSocket]) => {
+              if (participantSocket !== socket.id) {
+                io.to(participantSocket).emit('user-left-call', {
+                  userId: user.username,
+                  callId
+                });
+              }
+            });
             
-            if (targetSocket) {
-              io.to(targetSocket).emit('end-call', { callId });
+            // Remove from call
+            delete call.participants[user.username];
+            delete call.offers[user.username];
+            delete call.answers[user.username];
+            delete call.iceCandidates[user.username];
+            
+            // Clean up if empty
+            if (Object.keys(call.participants).length === 0) {
+              delete activeCalls[user.room][callId];
             }
-            
-            delete activeCalls[user.room][callId];
           }
         });
       }
 
+      // Notify room about user leaving
       const leaveMsg = {
         ...formatMessage(botName, `${user.username} has left the chat`),
         id: uuidv4()
       };
       io.to(user.room).emit('message', leaveMsg);
 
+      // Update room users
       io.to(user.room).emit('roomUsers', {
         room: user.room,
         users: getRoomUsers(user.room),

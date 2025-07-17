@@ -24,7 +24,6 @@
   <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png">
   <link rel="shortcut icon" href="/favicon.ico">
 
-
   <title>Chat App 💬</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
@@ -41,8 +40,11 @@
           <i class="fas fa-moon"></i>
         </button>
 
-        <!-- Video Call Button (Fixed) -->
-        <button class="header-btn" id="video-call-btn">
+        <!-- Call Buttons -->
+        <button class="header-btn" id="audio-call-btn" title="Start Audio Call">
+          <i class="fas fa-phone"></i>
+        </button>
+        <button class="header-btn" id="video-call-btn" title="Start Video Call">
           <i class="fas fa-video"></i>
         </button>
 
@@ -85,22 +87,27 @@
         </button>
       </form>
     </div>
-    <!-- Add these at the bottom of your chat-container div -->
+
+    <!-- Video/Audio Call Container -->
     <div id="video-call-container" class="d-none">
-      <div class="video-container">
-        <video id="local-video" autoplay muted></video>
-        <video id="remote-video" autoplay></video>
-      </div>
-      <div class="video-controls">
-        <button id="end-call-btn" class="btn btn-danger">
-          <i class="fas fa-phone-slash"></i> End Call
-        </button>
-        <button id="toggle-audio-btn" class="btn btn-secondary">
-          <i class="fas fa-microphone"></i> Mute
-        </button>
-        <button id="toggle-video-btn" class="btn btn-secondary">
-          <i class="fas fa-video-slash"></i> Video Off
-        </button>
+      <!-- Content will be dynamically generated -->
+    </div>
+  </div>
+
+  <!-- Call Alert Modal -->
+  <div id="call-alert-modal" class="modal fade" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="call-alert-title">Incoming Call</h5>
+        </div>
+        <div class="modal-body" id="call-alert-body">
+          <!-- Content will be dynamically generated -->
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-danger" id="reject-call-btn">Decline</button>
+          <button type="button" class="btn btn-success" id="accept-call-btn">Accept</button>
+        </div>
       </div>
     </div>
   </div>
