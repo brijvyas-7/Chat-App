@@ -48,7 +48,7 @@ body {
 /* Terminal Dark Mode */
 body.dark {
   font-family: 'Courier New', monospace;
-  background-color: var(--terminal-bg);
+  background-color: var(--terminal-bg) !important;
   color: var(--terminal-fg);
 }
 
