@@ -1018,3 +1018,10 @@ header {
 .audio-controls {
   display: flex;
 }
+.fas.fa-paper-plane {
+  position: static !important;
+  background: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
