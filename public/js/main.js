@@ -1,4 +1,4 @@
-// ✅ Complete Multi-User Video Chat Implementation
+// ✅ COMPLETE WORKING VIDEO CHAT IMPLEMENTATION
 const socket = io({ reconnection: true, reconnectionAttempts: 5, reconnectionDelay: 1000 });
 
 // DOM Elements
@@ -29,30 +29,24 @@ let lastTypingUpdate = 0;
 const SWIPE_THRESHOLD = 60;
 
 // WebRTC Variables
-let peerConnections = {}; // Track multiple peer connections
+let peerConnections = {};
 let localStream = null;
-let remoteStreams = {}; // Track streams by user ID
+let remoteStreams = {};
 let currentCallId = null;
 let callTimeout = null;
 let isCallActive = false;
-let iceQueues = {}; // Track ICE candidates by call ID
+let iceQueues = {};
 let isAudioMuted = false;
 let isVideoOff = false;
-let currentCallType = null; // 'audio' or 'video'
-let currentFacingMode = 'user'; // 'user' or 'environment'
+let currentCallType = null;
+let currentFacingMode = 'user';
 
-// ICE Configuration with STUN and TURN servers
+// ICE Configuration
 const ICE_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    // Add your TURN server credentials here if needed
-    // {
-    //   urls: 'turn:your-turn-server.com',
-    //   username: 'your-username',
-    //   credential: 'your-password'
-    // }
+    { urls: 'stun:stun2.l.google.com:19302' }
   ],
   iceCandidatePoolSize: 10
 };
@@ -69,7 +63,6 @@ const uuidv4 = () => {
 // UI Functions
 // ======================
 
-// Dark Mode
 function initDarkMode() {
   const isDark = localStorage.getItem('darkMode') === 'true';
   document.body.classList.toggle('dark', isDark);
@@ -95,7 +88,6 @@ muteBtn.innerHTML = isMuted ? '<i class="fas fa-bell-slash"></i>' : '<i class="f
 // Chat Functions
 // ======================
 
-// Reply UI
 cancelReplyBtn.onclick = e => {
   e.stopPropagation();
   replyTo = null;
@@ -166,7 +158,7 @@ function showTypingIndicator(user) {
 }
 
 // ======================
-// Swipe to Reply Functionality
+// Swipe to Reply
 // ======================
 
 function setupSwipeToReply() {
@@ -186,15 +178,13 @@ function setupSwipeToReply() {
     const messageElement = e.target.closest('.message');
     
     if (Math.abs(touchEndX - touchStartX) > SWIPE_THRESHOLD) {
-      if (touchEndX < touchStartX) { // Swipe left
+      if (touchEndX < touchStartX) {
         const user = messageElement.querySelector('.meta strong')?.textContent;
         const text = messageElement.querySelector('.text')?.textContent;
         const msgID = messageElement.id;
         
         if (user && text) {
           setupReply(user, msgID, text);
-          
-          // Visual feedback
           messageElement.style.transform = 'translateX(-10px)';
           setTimeout(() => {
             messageElement.style.transform = '';
@@ -204,7 +194,7 @@ function setupSwipeToReply() {
     }
   }, { passive: true });
 
-  // Mouse support for desktop
+  // Mouse support
   let mouseDownX = 0;
   chatMessages.addEventListener('mousedown', (e) => {
     if (e.target.closest('.message')) {
@@ -219,15 +209,13 @@ function setupSwipeToReply() {
     const messageElement = e.target.closest('.message');
     
     if (Math.abs(mouseUpX - mouseDownX) > SWIPE_THRESHOLD) {
-      if (mouseUpX < mouseDownX) { // Swipe left
+      if (mouseUpX < mouseDownX) {
         const user = messageElement.querySelector('.meta strong')?.textContent;
         const text = messageElement.querySelector('.text')?.textContent;
         const msgID = messageElement.id;
         
         if (user && text) {
           setupReply(user, msgID, text);
-          
-          // Visual feedback
           messageElement.classList.add('swipe-feedback');
           setTimeout(() => {
             messageElement.classList.remove('swipe-feedback');
@@ -238,7 +226,7 @@ function setupSwipeToReply() {
   });
 }
 
-// Add CSS for swipe feedback
+// Add CSS
 const swipeFeedbackCSS = `
   .message.swipe-feedback {
     transform: translateX(-10px);
@@ -279,7 +267,7 @@ const swipeFeedbackCSS = `
   }
   
   .local-video-container {
-    order: -1; /* Show local video first */
+    order: -1;
   }
   
   .audio-container {
@@ -302,10 +290,9 @@ style.innerHTML = swipeFeedbackCSS;
 document.head.appendChild(style);
 
 // ======================
-// Call Functions (Audio & Video)
+// Call Functions
 // ======================
 
-// Video UI Functions
 function showCallingUI(callType) {
   videoCallContainer.innerHTML = `
     <div class="calling-ui">
@@ -350,7 +337,6 @@ function showCallUI(callType) {
 
   videoCallContainer.classList.remove('d-none');
 
-  // Setup control handlers
   document.getElementById('toggle-audio-btn').onclick = toggleAudio;
   document.getElementById('end-call-btn').onclick = endCall;
   if (callType === 'video') {
@@ -358,7 +344,6 @@ function showCallUI(callType) {
     document.getElementById('flip-camera-btn').onclick = flipCamera;
   }
 
-  // Add local video if this is a video call
   if (callType === 'video' && localStream) {
     addVideoElement('local', username, localStream, true);
   }
@@ -383,48 +368,51 @@ function showCallEndedUI(msg) {
   document.getElementById('close-alert-btn').onclick = () => div.remove();
 }
 
-// Video Element Management
+// ======================
+// Video/Audio Elements
+// ======================
+
 function addVideoElement(type, userId, stream, isLocal = false) {
   const videoGrid = document.getElementById('video-grid');
   if (!videoGrid) {
-    console.error('Video grid container not found!');
-    return;
+    console.error('Video grid not found!');
+    return null;
   }
 
-  // Remove existing video if it exists
-  const existingVideo = document.getElementById(`${type}-video-${userId}`);
-  if (existingVideo) existingVideo.remove();
+  const existing = document.getElementById(`${type}-container-${userId}`);
+  if (existing) existing.remove();
 
-  const videoContainer = document.createElement('div');
-  videoContainer.className = `video-container ${isLocal ? 'local-video-container' : ''}`;
-  videoContainer.id = `${type}-container-${userId}`;
+  const container = document.createElement('div');
+  container.className = `video-container ${isLocal ? 'local-video-container' : ''}`;
+  container.id = `${type}-container-${userId}`;
 
-  const videoElem = document.createElement('video');
-  videoElem.id = `${type}-video-${userId}`;
-  videoElem.autoplay = true;
-  videoElem.playsInline = true;
-  videoElem.muted = isLocal;
-
-  if (isLocal && currentCallType === 'video') {
-    videoElem.style.transform = 'scaleX(-1)'; // Mirror effect for local video
-  }
-
-  const userLabel = document.createElement('div');
-  userLabel.className = 'video-user-label';
-  userLabel.textContent = userId === username ? 'You' : userId;
-
-  videoContainer.appendChild(videoElem);
-  videoContainer.appendChild(userLabel);
-  videoGrid.appendChild(videoContainer);
-
-  // Critical: Assign the stream to the video element
-  videoElem.srcObject = stream;
+  const video = document.createElement('video');
+  video.id = `${type}-video-${userId}`;
+  video.autoplay = true;
+  video.playsInline = true;
+  video.muted = isLocal;
   
-  videoElem.onloadedmetadata = () => {
-    videoElem.play().catch(e => console.error('Video play error:', e));
+  if (isLocal && currentCallType === 'video') {
+    video.style.transform = 'scaleX(-1)';
+  }
+
+  const label = document.createElement('div');
+  label.className = 'video-user-label';
+  label.textContent = userId === username ? 'You' : userId;
+
+  container.appendChild(video);
+  container.appendChild(label);
+  videoGrid.appendChild(container);
+
+  // Critical: Attach the stream
+  video.srcObject = stream;
+  
+  video.onloadedmetadata = () => {
+    video.play().catch(e => console.error('Video play failed:', e));
   };
 
-  console.log(`Video element created for ${userId}`); // Debug log
+  console.log(`Created ${type} video element for ${userId}`);
+  return video;
 }
 
 function addAudioElement(userId) {
@@ -448,7 +436,10 @@ function addAudioElement(userId) {
   videoGrid.appendChild(audioContainer);
 }
 
-// Media Control Functions
+// ======================
+// Media Controls
+// ======================
+
 function updateMediaButtons() {
   const aBtn = document.getElementById('toggle-audio-btn');
   const vBtn = document.getElementById('toggle-video-btn');
@@ -463,7 +454,6 @@ async function toggleAudio() {
   }
   updateMediaButtons();
   
-  // Notify other peers about mute state
   if (isCallActive && currentCallId) {
     socket.emit('mute-state', { 
       room, 
@@ -481,7 +471,6 @@ async function toggleVideo() {
   }
   updateMediaButtons();
   
-  // Notify other peers about video state
   if (isCallActive && currentCallId) {
     socket.emit('video-state', { 
       room, 
@@ -496,25 +485,17 @@ async function flipCamera() {
   if (!localStream || currentCallType !== 'video') return;
   
   try {
-    // Stop current video tracks
     localStream.getVideoTracks().forEach(track => track.stop());
-    
-    // Switch facing mode
     currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
     
-    // Get new stream with opposite facing mode
     const newStream = await navigator.mediaDevices.getUserMedia({
       audio: true,
-      video: {
-        facingMode: currentFacingMode
-      }
+      video: { facingMode: currentFacingMode }
     });
     
-    // Replace the local stream
     localStream.getVideoTracks().forEach(track => localStream.removeTrack(track));
     newStream.getVideoTracks().forEach(track => localStream.addTrack(track));
     
-    // Update all peer connections
     Object.keys(peerConnections).forEach(userId => {
       const sender = peerConnections[userId].getSenders().find(s => s.track.kind === 'video');
       if (sender) {
@@ -522,7 +503,6 @@ async function flipCamera() {
       }
     });
     
-    // Update local video element
     const localVideo = document.getElementById(`local-video-${username}`);
     if (localVideo) {
       localVideo.srcObject = localStream;
@@ -532,12 +512,14 @@ async function flipCamera() {
   }
 }
 
+// ======================
 // Call Management
+// ======================
+
 async function startCall(callType) {
   if (isCallActive) return;
   
   try {
-    // Test permissions first
     const mediaConstraints = {
       audio: true,
       video: callType === 'video' ? { facingMode: 'user' } : false
@@ -556,16 +538,13 @@ async function startCall(callType) {
   showCallingUI(callType);
 
   try {
-    // Get local media
     localStream = await navigator.mediaDevices.getUserMedia({
       audio: true,
       video: callType === 'video' ? { facingMode: 'user' } : false
     });
 
-    // Show call UI with local stream
     showCallUI(callType);
 
-    // Notify room about the call
     socket.emit('call-initiate', { 
       room, 
       callId: currentCallId,
@@ -573,7 +552,6 @@ async function startCall(callType) {
       caller: username 
     });
 
-    // Set timeout for no answer
     callTimeout = setTimeout(() => {
       if (Object.keys(peerConnections).length === 0) {
         endCall();
@@ -606,131 +584,127 @@ async function handleIncomingCall({ callType, callId, caller }) {
   iceQueues[callId] = {};
 
   try {
-    // Get local media
-    localStream = await navigator.mediaDevices.getUserMedia({
+    const permissions = await navigator.permissions.query({ name: 'camera' });
+    console.log('Camera permission state:', permissions.state);
+    
+    const stream = await navigator.mediaDevices.getUserMedia({
       audio: true,
       video: callType === 'video' ? { facingMode: 'user' } : false
     });
+    
+    console.log('Obtained media stream with tracks:', 
+      `Audio: ${stream.getAudioTracks().length}, ` +
+      `Video: ${stream.getVideoTracks().length}`);
 
-    // Show call UI with local stream
+    localStream = stream;
     showCallUI(callType);
-
-    // Notify caller that we've accepted
     socket.emit('accept-call', { room, callId });
-
-    // Answer the call by creating peer connections with all existing participants
     socket.emit('get-call-participants', { room, callId });
 
   } catch (err) {
-    console.error('Call setup error:', err);
+    console.error('Call setup failed:', err);
+    alert(`Failed to start call: ${err.message}`);
     endCall();
-    showCallEndedUI('Call failed to start');
   }
 }
+
+// ======================
+// Peer Connection (FIXED VERSION)
+// ======================
 
 async function establishPeerConnection(userId, isInitiator = false) {
   if (!isCallActive || peerConnections[userId]) return;
 
-  console.log(`Establishing peer connection with ${userId}, initiator: ${isInitiator}`);
-
+  console.log(`Creating peer connection with ${userId}`);
   const peerConnection = new RTCPeerConnection(ICE_CONFIG);
   peerConnections[userId] = peerConnection;
 
-  // Add local tracks if we have them
+  // Add local tracks
   if (localStream) {
     localStream.getTracks().forEach(track => {
       peerConnection.addTrack(track, localStream);
-      console.log(`Added ${track.kind} track to peer connection`);
+      console.log(`Added local ${track.kind} track`);
     });
   }
 
-  // ICE Candidate handling
-  peerConnection.onicecandidate = e => {
-    if (e.candidate) {
-      console.log(`Sending ICE candidate to ${userId}`);
-      socket.emit('ice-candidate', { 
-        candidate: e.candidate, 
-        room, 
-        callId: currentCallId,
-        targetUser: userId
-      });
-    } else {
-      console.log('All ICE candidates have been sent');
-    }
-  };
-
-  // Remote stream handling
-  peerConnection.ontrack = e => {
-    console.log('Received remote track:', e.track.kind);
+  // FIXED: Enhanced remote stream handling
+  peerConnection.ontrack = (e) => {
+    console.log('Remote track received:', e.streams);
     
     if (!e.streams || e.streams.length === 0) {
       console.warn('No streams in track event');
       return;
     }
-    
+
     const stream = e.streams[0];
     remoteStreams[userId] = stream;
-    
-    // Check if video track exists
-    const hasVideo = stream.getVideoTracks().length > 0;
-    
-    if (hasVideo) {
-      console.log(`Adding video element for ${userId}`);
-      addVideoElement('remote', userId, stream);
+
+    // For video calls, always create video element
+    if (currentCallType === 'video') {
+      const videoElem = addVideoElement('remote', userId, stream);
+      
+      // Double-attach stream to ensure it works
+      setTimeout(() => {
+        if (videoElem && (!videoElem.srcObject || videoElem.srcObject.getTracks().length === 0)) {
+          console.log('Ensuring stream is attached');
+          videoElem.srcObject = stream;
+          videoElem.play().catch(e => console.error('Video play error:', e));
+        }
+      }, 300);
     } else {
-      console.log(`Adding audio element for ${userId}`);
       addAudioElement(userId);
     }
-    
-    // Double check after a delay
-    setTimeout(() => {
-      const videoElem = document.getElementById(`remote-video-${userId}`);
-      if (videoElem && !videoElem.srcObject) {
-        console.log('Fixing missing stream on video element');
-        videoElem.srcObject = stream;
-      }
-    }, 1000);
+  };
+
+  // ICE Candidate handling
+  peerConnection.onicecandidate = (e) => {
+    if (e.candidate) {
+      socket.emit('ice-candidate', {
+        candidate: e.candidate,
+        room,
+        callId: currentCallId,
+        targetUser: userId
+      });
+    }
   };
 
   // Connection state handling
   peerConnection.onconnectionstatechange = () => {
-    const state = peerConnection.connectionState;
-    console.log(`Connection state with ${userId}: ${state}`);
-    if (['disconnected', 'failed', 'closed'].includes(state)) {
-      console.log(`Removing connection with ${userId}`);
+    console.log(`Connection state with ${userId}: ${peerConnection.connectionState}`);
+    if (['disconnected', 'failed'].includes(peerConnection.connectionState)) {
       removePeerConnection(userId);
-      if (Object.keys(peerConnections).length === 0) {
-        endCall();
-      }
     }
   };
 
+  // Create offer if initiator
   if (isInitiator) {
-    // Create and send offer
     try {
       console.log(`Creating offer for ${userId}`);
-      const offer = await peerConnection.createOffer();
+      const offer = await peerConnection.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: currentCallType === 'video'
+      });
       await peerConnection.setLocalDescription(offer);
-      socket.emit('offer', { 
-        offer, 
-        room, 
+      
+      socket.emit('offer', {
+        offer,
+        room,
         callId: currentCallId,
         targetUser: userId
       });
-      console.log(`Offer sent to ${userId}`);
     } catch (err) {
       console.error('Error creating offer:', err);
     }
   }
 
   // Process queued ICE candidates
-  if (iceQueues[currentCallId] && iceQueues[currentCallId][userId]) {
-    console.log(`Processing queued ICE candidates for ${userId}`);
+  if (iceQueues[currentCallId]?.[userId]) {
+    console.log(`Processing ${iceQueues[currentCallId][userId].length} queued ICE candidates`);
     iceQueues[currentCallId][userId].forEach(candidate => {
       peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
-        .catch(e => console.error('ICE error:', e));
+        .catch(e => console.error('ICE candidate error:', e));
     });
-    iceQueues[currentCallId][userId] = [];
+    delete iceQueues[currentCallId][userId];
   }
 }
 
@@ -740,7 +714,6 @@ function removePeerConnection(userId) {
     delete peerConnections[userId];
   }
   
-  // Remove video/audio element if it exists
   const videoContainer = document.getElementById(`remote-container-${userId}`);
   if (videoContainer) videoContainer.remove();
   
@@ -753,18 +726,15 @@ function removePeerConnection(userId) {
 function endCall() {
   console.log('Ending call');
   
-  // Clean up all peer connections
   Object.keys(peerConnections).forEach(userId => {
     removePeerConnection(userId);
   });
   
-  // Clean up local stream
   if (localStream) {
     localStream.getTracks().forEach(track => track.stop());
     localStream = null;
   }
 
-  // Remove local video element
   const localVideoContainer = document.getElementById(`local-container-${username}`);
   if (localVideoContainer) localVideoContainer.remove();
 
@@ -806,7 +776,7 @@ socket.on('incoming-call', handleIncomingCall);
 
 socket.on('call-initiate', ({ callType, callId, caller }) => {
   console.log(`Call initiated by ${caller}, type: ${callType}`);
-  if (callId === currentCallId) return; // Ignore our own call initiation
+  if (callId === currentCallId) return;
   
   if (isCallActive) {
     socket.emit('reject-call', { room, callId, reason: 'busy' });
@@ -820,7 +790,6 @@ socket.on('accept-call', async ({ userId, callId }) => {
   console.log(`Call accepted by ${userId}`);
   if (callId !== currentCallId || !isCallActive) return;
   
-  // Establish peer connection with this user
   await establishPeerConnection(userId, true);
 });
 
@@ -828,13 +797,11 @@ socket.on('offer', async ({ offer, userId, callId }) => {
   console.log(`Offer received from ${userId}`);
   if (callId !== currentCallId || !isCallActive) return;
   
-  // Check if we already have a connection with this user
   if (peerConnections[userId]) {
     console.log(`Already have connection with ${userId}, ignoring offer`);
     return;
   }
   
-  // Establish peer connection with this user
   await establishPeerConnection(userId);
   
   const peerConnection = peerConnections[userId];
@@ -851,9 +818,8 @@ socket.on('offer', async ({ offer, userId, callId }) => {
     });
     console.log(`Answer sent to ${userId}`);
     
-    // Process queued ICE candidates
-    if (iceQueues[callId] && iceQueues[callId][userId]) {
-      console.log(`Processing queued ICE candidates for ${userId}`);
+    if (iceQueues[callId]?.[userId]) {
+      console.log(`Processing ${iceQueues[callId][userId].length} queued ICE candidates`);
       iceQueues[callId][userId].forEach(c => {
         peerConnection.addIceCandidate(new RTCIceCandidate(c))
           .catch(e => console.error('Error adding queued ICE candidate:', e));
@@ -873,9 +839,8 @@ socket.on('answer', async ({ answer, userId, callId }) => {
     await peerConnections[userId].setRemoteDescription(new RTCSessionDescription(answer));
     console.log(`Remote description set for ${userId}`);
     
-    // Process queued ICE candidates
-    if (iceQueues[callId] && iceQueues[callId][userId]) {
-      console.log(`Processing queued ICE candidates for ${userId}`);
+    if (iceQueues[callId]?.[userId]) {
+      console.log(`Processing ${iceQueues[callId][userId].length} queued ICE candidates`);
       iceQueues[callId][userId].forEach(c => {
         peerConnections[userId].addIceCandidate(new RTCIceCandidate(c))
           .catch(e => console.error('Error adding queued ICE candidate:', e));
@@ -891,7 +856,6 @@ socket.on('ice-candidate', ({ candidate, userId, callId }) => {
   console.log(`ICE candidate received from ${userId}`);
   if (callId !== currentCallId || !isCallActive) return;
   
-  // Queue candidate if we don't have the connection yet
   if (!peerConnections[userId]) {
     console.log(`Queueing ICE candidate for ${userId}`);
     if (!iceQueues[callId]) iceQueues[callId] = {};
@@ -913,7 +877,6 @@ socket.on('call-participants', ({ participants, callId }) => {
   console.log(`Call participants: ${participants.join(', ')}`);
   if (callId !== currentCallId || !isCallActive) return;
   
-  // Establish connections with all existing participants
   participants.forEach(async userId => {
     if (userId !== username && !peerConnections[userId]) {
       console.log(`Establishing connection with existing participant ${userId}`);
@@ -925,7 +888,6 @@ socket.on('call-participants', ({ participants, callId }) => {
 socket.on('user-joined-call', ({ userId }) => {
   console.log(`${userId} joined the call`);
   if (!isCallActive || userId === username) return;
-  // We'll establish connection when we receive their offer
 });
 
 socket.on('user-left-call', ({ userId }) => {
@@ -966,7 +928,6 @@ socket.on('video-state', ({ userId, isVideoOff: videoOff }) => {
 // Event Listeners
 // ======================
 
-// Form submit
 document.getElementById('chat-form').onsubmit = e => {
   e.preventDefault();
   const text = msgInput.value.trim();
@@ -977,17 +938,18 @@ document.getElementById('chat-form').onsubmit = e => {
   replyPreview.classList.add('d-none');
 };
 
-// Initialize
 videoCallBtn.onclick = () => startCall('video');
 audioCallBtn.onclick = () => startCall('audio');
+
 window.addEventListener('beforeunload', () => {
   if (isCallActive) socket.emit('end-call', { room, callId: currentCallId });
 });
 
+// Initialize
 (function init() {
   if (!username || !room) return alert('Missing username or room!');
   initDarkMode();
   roomNameElem.textContent = room;
-  setupSwipeToReply(); // Initialize swipe functionality
+  setupSwipeToReply();
   console.log('Application initialized');
 })();
