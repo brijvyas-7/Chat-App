@@ -85,8 +85,6 @@ muteBtn.onclick = () => {
 
 muteBtn.innerHTML = isMuted ? '<i class="fas fa-bell-slash"></i>' : '<i class="fas fa-bell"></i>';
 
-// Rest of your code continues...
-
 // ======================
 // Chat Functions
 // ======================
@@ -160,6 +158,90 @@ function showTypingIndicator(user) {
     chatMessages.scrollTo({ top: chatMessages.scrollHeight, behavior: 'smooth' });
   }
 }
+
+// ======================
+// Swipe to Reply Functionality
+// ======================
+
+function setupSwipeToReply() {
+  let touchStartX = 0;
+  let touchEndX = 0;
+  
+  chatMessages.addEventListener('touchstart', (e) => {
+    if (e.target.closest('.message')) {
+      touchStartX = e.changedTouches[0].screenX;
+    }
+  }, { passive: true });
+
+  chatMessages.addEventListener('touchend', (e) => {
+    if (!e.target.closest('.message')) return;
+    
+    touchEndX = e.changedTouches[0].screenX;
+    const messageElement = e.target.closest('.message');
+    
+    if (Math.abs(touchEndX - touchStartX) > SWIPE_THRESHOLD) {
+      if (touchEndX < touchStartX) { // Swipe left
+        const user = messageElement.querySelector('.meta strong')?.textContent;
+        const text = messageElement.querySelector('.text')?.textContent;
+        const msgID = messageElement.id;
+        
+        if (user && text) {
+          setupReply(user, msgID, text);
+          
+          // Visual feedback
+          messageElement.style.transform = 'translateX(-10px)';
+          setTimeout(() => {
+            messageElement.style.transform = '';
+          }, 300);
+        }
+      }
+    }
+  }, { passive: true });
+
+  // Mouse support for desktop
+  let mouseDownX = 0;
+  chatMessages.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.message')) {
+      mouseDownX = e.screenX;
+    }
+  });
+
+  chatMessages.addEventListener('mouseup', (e) => {
+    if (!e.target.closest('.message')) return;
+    
+    const mouseUpX = e.screenX;
+    const messageElement = e.target.closest('.message');
+    
+    if (Math.abs(mouseUpX - mouseDownX) > SWIPE_THRESHOLD) {
+      if (mouseUpX < mouseDownX) { // Swipe left
+        const user = messageElement.querySelector('.meta strong')?.textContent;
+        const text = messageElement.querySelector('.text')?.textContent;
+        const msgID = messageElement.id;
+        
+        if (user && text) {
+          setupReply(user, msgID, text);
+          
+          // Visual feedback
+          messageElement.classList.add('swipe-feedback');
+          setTimeout(() => {
+            messageElement.classList.remove('swipe-feedback');
+          }, 300);
+        }
+      }
+    }
+  });
+}
+
+// Add CSS for swipe feedback
+const swipeFeedbackCSS = `
+  .message.swipe-feedback {
+    transform: translateX(-10px);
+    transition: transform 0.3s ease;
+  }
+`;
+const style = document.createElement('style');
+style.innerHTML = swipeFeedbackCSS;
+document.head.appendChild(style);
 
 // ======================
 // Call Functions (Audio & Video)
@@ -780,4 +862,5 @@ window.addEventListener('beforeunload', () => {
   if (!username || !room) return alert('Missing username or room!');
   initDarkMode();
   roomNameElem.textContent = room;
+  setupSwipeToReply(); // Initialize swipe functionality
 })();
