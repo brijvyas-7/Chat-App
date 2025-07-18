@@ -1,4 +1,3 @@
-// ✅ COMPLETE WORKING VIDEO CHAT IMPLEMENTATION (FIXED VERSION)
 const socket = io({ reconnection: true, reconnectionAttempts: 5, reconnectionDelay: 1000 });
 
 // DOM Elements
@@ -41,19 +40,25 @@ let isVideoOff = false;
 let currentCallType = null;
 let currentFacingMode = 'user';
 
-// ICE Configuration
+// ICE Configuration with TURN server (replace with your actual TURN server credentials)
 const ICE_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' }
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { 
+      urls: 'turn:your-turn-server.com:3478',
+      username: 'your-username',
+      credential: 'your-password' 
+    }
   ],
+  iceTransportPolicy: 'all',
   iceCandidatePoolSize: 10
 };
 
 // Helper Functions
 const uuidv4 = () => {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
     const r = Math.random() * 16 | 0;
     return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
   });
@@ -158,154 +163,7 @@ function showTypingIndicator(user) {
 }
 
 // ======================
-// Swipe to Reply
-// ======================
-
-function setupSwipeToReply() {
-  let touchStartX = 0;
-  let touchEndX = 0;
-
-  chatMessages.addEventListener('touchstart', (e) => {
-    if (e.target.closest('.message')) {
-      touchStartX = e.changedTouches[0].screenX;
-    }
-  }, { passive: true });
-
-  chatMessages.addEventListener('touchend', (e) => {
-    if (!e.target.closest('.message')) return;
-
-    touchEndX = e.changedTouches[0].screenX;
-    const messageElement = e.target.closest('.message');
-
-    if (Math.abs(touchEndX - touchStartX) > SWIPE_THRESHOLD) {
-      if (touchEndX < touchStartX) {
-        const user = messageElement.querySelector('.meta strong')?.textContent;
-        const text = messageElement.querySelector('.text')?.textContent;
-        const msgID = messageElement.id;
-
-        if (user && text) {
-          setupReply(user, msgID, text);
-          messageElement.style.transform = 'translateX(-10px)';
-          setTimeout(() => {
-            messageElement.style.transform = '';
-          }, 300);
-        }
-      }
-    }
-  }, { passive: true });
-
-  // Mouse support
-  let mouseDownX = 0;
-  chatMessages.addEventListener('mousedown', (e) => {
-    if (e.target.closest('.message')) {
-      mouseDownX = e.screenX;
-    }
-  });
-
-  chatMessages.addEventListener('mouseup', (e) => {
-    if (!e.target.closest('.message')) return;
-
-    const mouseUpX = e.screenX;
-    const messageElement = e.target.closest('.message');
-
-    if (Math.abs(mouseUpX - mouseDownX) > SWIPE_THRESHOLD) {
-      if (mouseUpX < mouseDownX) {
-        const user = messageElement.querySelector('.meta strong')?.textContent;
-        const text = messageElement.querySelector('.text')?.textContent;
-        const msgID = messageElement.id;
-
-        if (user && text) {
-          setupReply(user, msgID, text);
-          messageElement.classList.add('swipe-feedback');
-          setTimeout(() => {
-            messageElement.classList.remove('swipe-feedback');
-          }, 300);
-        }
-      }
-    }
-  });
-}
-
-// Add CSS
-const swipeFeedbackCSS = `
-  .message.swipe-feedback {
-    transform: translateX(-10px);
-    transition: transform 0.3s ease;
-  }
-  
-  .video-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 10px;
-    padding: 10px;
-    width: 100%;
-    height: calc(100% - 60px);
-    overflow-y: auto;
-  }
-  
-  .video-container {
-    position: relative;
-    background: #000;
-    border-radius: 8px;
-    overflow: hidden;
-    aspect-ratio: 4/3;
-  }
-  
-  .video-container video {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-  
-  .video-user-label {
-    position: absolute;
-    bottom: 5px;
-    left: 5px;
-    color: white;
-    background: rgba(0,0,0,0.5);
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-  }
-  
-  .local-video-container {
-    order: -1;
-  }
-  
-  .video-grid:has(> .video-container:only-child),
-  .video-grid:has(> .video-container:nth-child(2):last-child) {
-    grid-template-columns: 1fr;
-  }
-  
-  .video-grid:has(> .video-container:nth-child(2):last-child) .video-container {
-    height: 50%;
-  }
-  
-  .video-container.speaking {
-    box-shadow: 0 0 10px 3px rgba(0, 255, 0, 0.5);
-  }
-  
-  .audio-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    background: #f0f0f0;
-    border-radius: 8px;
-    padding: 20px;
-  }
-  
-  .audio-icon {
-    font-size: 24px;
-    margin-bottom: 10px;
-  }
-`;
-const style = document.createElement('style');
-style.innerHTML = swipeFeedbackCSS;
-document.head.appendChild(style);
-
-// ======================
-// Call Functions
+// Call UI Functions
 // ======================
 
 function showCallingUI(callType) {
@@ -318,8 +176,8 @@ function showCallingUI(callType) {
   `;
   videoCallContainer.classList.remove('d-none');
   document.getElementById('cancel-call-btn').onclick = endCall;
-  callSound.loop = true;
-  callSound.play().catch(() => { });
+  callSound.loop = true; 
+  callSound.play().catch(() => {});
 }
 
 function showCallUI(callType) {
@@ -406,7 +264,7 @@ function addVideoElement(type, userId, stream, isLocal = false) {
   video.autoplay = true;
   video.playsInline = true;
   video.muted = isLocal;
-
+  
   if (isLocal && currentCallType === 'video') {
     video.style.transform = 'scaleX(-1)';
   }
@@ -419,9 +277,8 @@ function addVideoElement(type, userId, stream, isLocal = false) {
   container.appendChild(label);
   videoGrid.appendChild(container);
 
-  // Attach the stream
   video.srcObject = stream;
-
+  
   video.onloadedmetadata = () => {
     video.play().catch(e => console.error('Video play failed:', e));
   };
@@ -468,10 +325,10 @@ async function toggleAudio() {
     localStream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
   }
   updateMediaButtons();
-
+  
   if (isCallActive && currentCallId) {
-    socket.emit('mute-state', {
-      room,
+    socket.emit('mute-state', { 
+      room, 
       callId: currentCallId,
       isAudioMuted,
       userId: username
@@ -485,10 +342,10 @@ async function toggleVideo() {
     localStream.getVideoTracks().forEach(t => t.enabled = !isVideoOff);
   }
   updateMediaButtons();
-
+  
   if (isCallActive && currentCallId) {
-    socket.emit('video-state', {
-      room,
+    socket.emit('video-state', { 
+      room, 
       callId: currentCallId,
       isVideoOff,
       userId: username
@@ -498,26 +355,26 @@ async function toggleVideo() {
 
 async function flipCamera() {
   if (!localStream || currentCallType !== 'video') return;
-
+  
   try {
     localStream.getVideoTracks().forEach(track => track.stop());
     currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-
+    
     const newStream = await navigator.mediaDevices.getUserMedia({
       audio: true,
       video: { facingMode: currentFacingMode }
     });
-
+    
     localStream.getVideoTracks().forEach(track => localStream.removeTrack(track));
     newStream.getVideoTracks().forEach(track => localStream.addTrack(track));
-
+    
     Object.keys(peerConnections).forEach(userId => {
       const sender = peerConnections[userId].getSenders().find(s => s.track.kind === 'video');
       if (sender) {
         sender.replaceTrack(localStream.getVideoTracks()[0]);
       }
     });
-
+    
     const localVideo = document.getElementById(`local-video-${username}`);
     if (localVideo) {
       localVideo.srcObject = localStream;
@@ -528,19 +385,179 @@ async function flipCamera() {
 }
 
 // ======================
+// Peer Connection Management
+// ======================
+
+async function establishPeerConnection(userId, isInitiator = false) {
+  if (!isCallActive || peerConnections[userId]) return;
+
+  console.log(`Creating peer connection with ${userId}`);
+  const peerConnection = new RTCPeerConnection(ICE_CONFIG);
+  peerConnections[userId] = peerConnection;
+
+  // Debugging handlers
+  peerConnection.oniceconnectionstatechange = () => {
+    console.log(`ICE connection state with ${userId}: ${peerConnection.iceConnectionState}`);
+    if (peerConnection.iceConnectionState === 'failed') {
+      peerConnection.restartIce();
+    }
+  };
+
+  peerConnection.onsignalingstatechange = () => {
+    console.log(`Signaling state with ${userId}: ${peerConnection.signalingState}`);
+  };
+
+  peerConnection.onconnectionstatechange = () => {
+    console.log(`Connection state with ${userId}: ${peerConnection.connectionState}`);
+    if (['disconnected', 'failed'].includes(peerConnection.connectionState)) {
+      setTimeout(() => {
+        if (peerConnection.connectionState !== 'connected') {
+          removePeerConnection(userId);
+        }
+      }, 2000);
+    }
+  };
+
+  // Add local tracks
+  if (localStream) {
+    localStream.getTracks().forEach(track => {
+      peerConnection.addTrack(track, localStream);
+      console.log(`Added local ${track.kind} track`);
+    });
+  }
+
+  // Handle incoming media
+  peerConnection.ontrack = (e) => {
+    console.log('Remote track received:', e.streams);
+    
+    if (!e.streams || e.streams.length === 0) {
+      console.warn('No streams in track event');
+      return;
+    }
+
+    const stream = e.streams[0];
+    remoteStreams[userId] = stream;
+
+    if (currentCallType === 'video') {
+      let videoElem = document.getElementById(`remote-video-${userId}`);
+      if (!videoElem) {
+        videoElem = addVideoElement('remote', userId, stream);
+      } else {
+        videoElem.srcObject = stream;
+      }
+      
+      videoElem.onloadedmetadata = () => {
+        videoElem.play().catch(e => console.error('Video play error:', e));
+      };
+    } else {
+      if (!document.getElementById(`audio-container-${userId}`)) {
+        addAudioElement(userId);
+      }
+    }
+  };
+
+  // ICE Candidate handling
+  peerConnection.onicecandidate = (e) => {
+    if (e.candidate) {
+      console.log('Sending ICE candidate to', userId);
+      socket.emit('ice-candidate', {
+        candidate: e.candidate,
+        room,
+        callId: currentCallId,
+        targetUser: userId
+      });
+    }
+  };
+
+  // Create offer if initiator
+  if (isInitiator) {
+    try {
+      console.log(`Creating offer for ${userId}`);
+      const offer = await peerConnection.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: currentCallType === 'video'
+      });
+      await peerConnection.setLocalDescription(offer);
+      
+      socket.emit('offer', {
+        offer,
+        room,
+        callId: currentCallId,
+        targetUser: userId
+      });
+    } catch (err) {
+      console.error('Error creating offer:', err);
+    }
+  }
+
+  // Process queued ICE candidates
+  if (iceQueues[currentCallId]?.[userId]?.length > 0) {
+    console.log(`Processing ${iceQueues[currentCallId][userId].length} queued ICE candidates`);
+    for (const candidate of iceQueues[currentCallId][userId]) {
+      try {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (e) {
+        console.error('Error adding queued ICE candidate:', e);
+      }
+    }
+    iceQueues[currentCallId][userId] = [];
+  }
+}
+
+function removePeerConnection(userId) {
+  if (peerConnections[userId]) {
+    peerConnections[userId].close();
+    delete peerConnections[userId];
+  }
+  
+  const videoContainer = document.getElementById(`remote-container-${userId}`);
+  if (videoContainer) videoContainer.remove();
+  
+  const audioContainer = document.getElementById(`audio-container-${userId}`);
+  if (audioContainer) audioContainer.remove();
+  
+  delete remoteStreams[userId];
+}
+
+function endCall() {
+  console.log('Ending call');
+  
+  Object.keys(peerConnections).forEach(userId => {
+    removePeerConnection(userId);
+  });
+  
+  if (localStream) {
+    localStream.getTracks().forEach(track => track.stop());
+    localStream = null;
+  }
+
+  const localVideoContainer = document.getElementById(`local-container-${username}`);
+  if (localVideoContainer) localVideoContainer.remove();
+
+  isCallActive = false;
+  currentCallId = null;
+  currentCallType = null;
+  clearTimeout(callTimeout);
+  hideCallUI();
+  
+  socket.emit('end-call', { room, callId: currentCallId });
+}
+
+// ======================
 // Call Management
 // ======================
 
 async function startCall(callType) {
   if (isCallActive) return;
-
+  
   try {
+    // Test permissions first
     const mediaConstraints = {
       audio: true,
       video: callType === 'video' ? { facingMode: 'user' } : false
     };
-    const test = await navigator.mediaDevices.getUserMedia(mediaConstraints);
-    test.getTracks().forEach(t => t.stop());
+    const testStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+    testStream.getTracks().forEach(t => t.stop());
   } catch {
     return alert(`Please allow ${callType === 'video' ? 'camera and microphone' : 'microphone'} access to start a call.`);
   }
@@ -553,6 +570,7 @@ async function startCall(callType) {
   showCallingUI(callType);
 
   try {
+    // Get the actual stream
     localStream = await navigator.mediaDevices.getUserMedia({
       audio: true,
       video: callType === 'video' ? { facingMode: 'user' } : false
@@ -560,11 +578,11 @@ async function startCall(callType) {
 
     showCallUI(callType);
 
-    socket.emit('call-initiate', {
-      room,
+    socket.emit('call-initiate', { 
+      room, 
       callId: currentCallId,
       callType,
-      caller: username
+      caller: username 
     });
 
     callTimeout = setTimeout(() => {
@@ -572,7 +590,7 @@ async function startCall(callType) {
         endCall();
         showCallEndedUI('No one answered');
       }
-    }, 45000); // Increased from 30s to 45s
+    }, 45000); // 45 second timeout
 
   } catch (err) {
     console.error('Call setup error:', err);
@@ -603,8 +621,8 @@ async function handleIncomingCall({ callType, callId, caller }) {
       audio: true,
       video: callType === 'video' ? { facingMode: 'user' } : false
     });
-
-    console.log('Obtained media stream with tracks:',
+    
+    console.log('Obtained media stream with tracks:', 
       `Audio: ${stream.getAudioTracks().length}, ` +
       `Video: ${stream.getVideoTracks().length}`);
 
@@ -621,174 +639,75 @@ async function handleIncomingCall({ callType, callId, caller }) {
 }
 
 // ======================
-// Peer Connection (FIXED VERSION)
+// Socket Event Handlers
 // ======================
 
-// ======================
-// Peer Connection (FIXED VERSION)
-// ======================
+socket.on('connect', () => {
+  console.log('Connected to server');
+  socket.emit('joinRoom', { username, room });
+});
 
-async function establishPeerConnection(userId, isInitiator = false) {
-  if (!isCallActive || peerConnections[userId]) return;
+socket.on('message', msg => {
+  console.log('New message received');
+  if (msg.username !== username && !isMuted) notificationSound.play().catch(() => {});
+  addMessage(msg);
+});
 
-  console.log(`Creating peer connection with ${userId}`);
-  const peerConnection = new RTCPeerConnection(ICE_CONFIG);
-  peerConnections[userId] = peerConnection;
+socket.on('showTyping', ({ username: u }) => {
+  console.log(`${u} is typing`);
+  u !== username && showTypingIndicator(u);
+});
 
-  // Debugging handlers
-  peerConnection.oniceconnectionstatechange = () => {
-    console.log(`ICE connection state with ${userId}: ${peerConnection.iceConnectionState}`);
-    if (peerConnection.iceConnectionState === 'failed') {
-      peerConnection.restartIce();
-    }
-  };
+socket.on('stopTyping', () => {
+  console.log('Typing stopped');
+  document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
+});
 
-  peerConnection.onsignalingstatechange = () => {
-    console.log(`Signaling state with ${userId}: ${peerConnection.signalingState}`);
-  };
+socket.on('incoming-call', handleIncomingCall);
 
-  peerConnection.onconnectionstatechange = () => {
-    console.log(`Connection state with ${userId}: ${peerConnection.connectionState}`);
-    if (['disconnected', 'failed'].includes(peerConnection.connectionState)) {
-      removePeerConnection(userId);
-    }
-  };
-
-  // Add local tracks if we have them
-  if (localStream) {
-    localStream.getTracks().forEach(track => {
-      peerConnection.addTrack(track, localStream);
-      console.log(`Added local ${track.kind} track`);
-    });
+socket.on('call-initiate', ({ callType, callId, caller }) => {
+  console.log(`Call initiated by ${caller}, type: ${callType}`);
+  if (callId === currentCallId) return;
+  
+  if (isCallActive) {
+    socket.emit('reject-call', { room, callId, reason: 'busy' });
+    return;
   }
+  
+  handleIncomingCall({ callType, callId, caller });
+});
 
-  // Enhanced remote stream handling
-  peerConnection.ontrack = (e) => {
-    console.log('Remote track received:', e.streams);
-
-    if (!e.streams || e.streams.length === 0) {
-      console.warn('No streams in track event');
-      return;
-    }
-
-    const stream = e.streams[0];
-    remoteStreams[userId] = stream;
-
-    if (currentCallType === 'video') {
-      // Check if video element exists
-      let videoElem = document.getElementById(`remote-video-${userId}`);
-
-      if (!videoElem) {
-        videoElem = addVideoElement('remote', userId, stream);
-      } else {
-        // Update existing video element
-        videoElem.srcObject = stream;
-      }
-
-      // Ensure video plays
-      const playVideo = () => {
-        videoElem.play().catch(e => console.error('Video play error:', e));
-      };
-
-      videoElem.onloadedmetadata = playVideo;
-      playVideo();
-    } else {
-      // For audio calls
-      if (!document.getElementById(`audio-container-${userId}`)) {
-        addAudioElement(userId);
-      }
-    }
-  };
-
-  // ICE Candidate handling
-  peerConnection.onicecandidate = (e) => {
-    if (e.candidate) {
-      console.log('Sending ICE candidate to', userId);
-      socket.emit('ice-candidate', {
-        candidate: e.candidate,
-        room,
-        callId: currentCallId,
-        targetUser: userId
-      });
-    } else {
-      console.log('All ICE candidates sent to', userId);
-    }
-  };
-
-  // Create offer if initiator
-  if (isInitiator) {
-    try {
-      console.log(`Creating offer for ${userId}`);
-      const offerOptions = {
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: currentCallType === 'video'
-      };
-      const offer = await peerConnection.createOffer(offerOptions);
-      console.log('Created offer:', offer);
-
-      await peerConnection.setLocalDescription(offer);
-      console.log('Set local description');
-
-      socket.emit('offer', {
-        offer,
-        room,
-        callId: currentCallId,
-        targetUser: userId
-      });
-    } catch (err) {
-      console.error('Error creating offer:', err);
-    }
-  }
-
-  // Process queued ICE candidates
-  if (iceQueues[currentCallId]?.[userId]?.length > 0) {
-    console.log(`Processing ${iceQueues[currentCallId][userId].length} queued ICE candidates`);
-    for (const candidate of iceQueues[currentCallId][userId]) {
-      try {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (e) {
-        console.error('Error adding queued ICE candidate:', e);
-      }
-    }
-    iceQueues[currentCallId][userId] = [];
-  }
-}
-
-// ======================
-// Improved Offer/Answer Handling
-// ======================
+socket.on('accept-call', async ({ userId, callId }) => {
+  console.log(`Call accepted by ${userId}`);
+  if (callId !== currentCallId || !isCallActive) return;
+  
+  await establishPeerConnection(userId, true);
+});
 
 socket.on('offer', async ({ offer, userId, callId }) => {
   console.log(`Offer received from ${userId}`);
   if (callId !== currentCallId || !isCallActive) return;
-
-  // If we already have a connection, ignore
+  
   if (peerConnections[userId]) {
     console.log(`Already have connection with ${userId}, ignoring offer`);
     return;
   }
-
-  // Create new connection
+  
   await establishPeerConnection(userId);
-
+  
   const peerConnection = peerConnections[userId];
   try {
-    console.log('Setting remote description');
     await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-
-    console.log('Creating answer');
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
-
-    console.log('Sending answer');
-    socket.emit('answer', {
-      answer,
-      room,
+    
+    socket.emit('answer', { 
+      answer, 
+      room, 
       callId,
       targetUser: userId
     });
-
-    // Process any queued ICE candidates
+    
     if (iceQueues[callId]?.[userId]?.length > 0) {
       console.log(`Processing ${iceQueues[callId][userId].length} queued ICE candidates`);
       for (const candidate of iceQueues[callId][userId]) {
@@ -808,12 +727,10 @@ socket.on('offer', async ({ offer, userId, callId }) => {
 socket.on('answer', async ({ answer, userId, callId }) => {
   console.log(`Answer received from ${userId}`);
   if (callId !== currentCallId || !isCallActive || !peerConnections[userId]) return;
-
+  
   try {
-    console.log('Setting remote description');
     await peerConnections[userId].setRemoteDescription(new RTCSessionDescription(answer));
-
-    // Process any queued ICE candidates
+    
     if (iceQueues[callId]?.[userId]?.length > 0) {
       console.log(`Processing ${iceQueues[callId][userId].length} queued ICE candidates`);
       for (const candidate of iceQueues[callId][userId]) {
@@ -830,15 +747,10 @@ socket.on('answer', async ({ answer, userId, callId }) => {
   }
 });
 
-// ======================
-// ICE Candidate Handling
-// ======================
-
 socket.on('ice-candidate', async ({ candidate, userId, callId }) => {
   console.log(`ICE candidate received from ${userId}`);
   if (callId !== currentCallId || !isCallActive) return;
-
-  // If peer connection doesn't exist yet, queue the candidate
+  
   if (!peerConnections[userId]) {
     console.log(`Queueing ICE candidate for ${userId}`);
     if (!iceQueues[callId]) iceQueues[callId] = {};
@@ -846,241 +758,18 @@ socket.on('ice-candidate', async ({ candidate, userId, callId }) => {
     iceQueues[callId][userId].push(candidate);
     return;
   }
-
-  // Otherwise, add immediately
+  
   try {
-    console.log('Adding ICE candidate');
     await peerConnections[userId].addIceCandidate(new RTCIceCandidate(candidate));
   } catch (err) {
     console.error('Error adding ICE candidate:', err);
   }
 });
 
-// ======================
-// Call Management Improvements
-// ======================
-
-async function startCall(callType) {
-  if (isCallActive) return;
-
-  try {
-    // Test permissions first
-    const mediaConstraints = {
-      audio: true,
-      video: callType === 'video' ? { facingMode: 'user' } : false
-    };
-    const testStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
-    testStream.getTracks().forEach(t => t.stop());
-  } catch (err) {
-    return alert(`Please allow ${callType === 'video' ? 'camera and microphone' : 'microphone'} access to start a call.`);
-  }
-
-  isCallActive = true;
-  currentCallType = callType;
-  currentCallId = uuidv4();
-  iceQueues[currentCallId] = {};
-
-  showCallingUI(callType);
-
-  try {
-    // Get the actual stream
-    localStream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: callType === 'video' ? { facingMode: 'user' } : false
-    });
-
-    showCallUI(callType);
-
-    socket.emit('call-initiate', {
-      room,
-      callId: currentCallId,
-      callType,
-      caller: username
-    });
-
-    callTimeout = setTimeout(() => {
-      if (Object.keys(peerConnections).length === 0) {
-        endCall();
-        showCallEndedUI('No one answered');
-      }
-    }, 45000);
-
-  } catch (err) {
-    console.error('Call setup error:', err);
-    endCall();
-    showCallEndedUI('Call failed to start');
-  }
-}
-
-function removePeerConnection(userId) {
-  if (peerConnections[userId]) {
-    peerConnections[userId].close();
-    delete peerConnections[userId];
-  }
-
-  const videoContainer = document.getElementById(`remote-container-${userId}`);
-  if (videoContainer) videoContainer.remove();
-
-  const audioContainer = document.getElementById(`audio-container-${userId}`);
-  if (audioContainer) audioContainer.remove();
-
-  delete remoteStreams[userId];
-}
-
-function endCall() {
-  console.log('Ending call');
-
-  Object.keys(peerConnections).forEach(userId => {
-    removePeerConnection(userId);
-  });
-
-  if (localStream) {
-    localStream.getTracks().forEach(track => track.stop());
-    localStream = null;
-  }
-
-  const localVideoContainer = document.getElementById(`local-container-${username}`);
-  if (localVideoContainer) localVideoContainer.remove();
-
-  isCallActive = false;
-  currentCallId = null;
-  currentCallType = null;
-  clearTimeout(callTimeout);
-  hideCallUI();
-
-  socket.emit('end-call', { room, callId: currentCallId });
-}
-
-// ======================
-// Socket Event Handlers
-// ======================
-
-socket.on('connect', () => {
-  console.log('Connected to server');
-  socket.emit('joinRoom', { username, room });
-});
-
-socket.on('message', msg => {
-  console.log('New message received');
-  if (msg.username !== username && !isMuted) notificationSound.play().catch(() => { });
-  addMessage(msg);
-});
-
-socket.on('showTyping', ({ username: u }) => {
-  console.log(`${u} is typing`);
-  u !== username && showTypingIndicator(u);
-});
-
-socket.on('stopTyping', () => {
-  console.log('Typing stopped');
-  document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
-});
-
-socket.on('incoming-call', handleIncomingCall);
-
-socket.on('call-initiate', ({ callType, callId, caller }) => {
-  console.log(`Call initiated by ${caller}, type: ${callType}`);
-  if (callId === currentCallId) return;
-
-  if (isCallActive) {
-    socket.emit('reject-call', { room, callId, reason: 'busy' });
-    return;
-  }
-
-  handleIncomingCall({ callType, callId, caller });
-});
-
-socket.on('accept-call', async ({ userId, callId }) => {
-  console.log(`Call accepted by ${userId}`);
-  if (callId !== currentCallId || !isCallActive) return;
-
-  await establishPeerConnection(userId, true);
-});
-
-socket.on('offer', async ({ offer, userId, callId }) => {
-  console.log(`Offer received from ${userId}`);
-  if (callId !== currentCallId || !isCallActive) return;
-
-  if (peerConnections[userId]) {
-    console.log(`Already have connection with ${userId}, ignoring offer`);
-    return;
-  }
-
-  await establishPeerConnection(userId);
-
-  const peerConnection = peerConnections[userId];
-  try {
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-
-    socket.emit('answer', {
-      answer,
-      room,
-      callId,
-      targetUser: userId
-    });
-    console.log(`Answer sent to ${userId}`);
-
-    if (iceQueues[callId]?.[userId]) {
-      console.log(`Processing ${iceQueues[callId][userId].length} queued ICE candidates`);
-      iceQueues[callId][userId].forEach(c => {
-        peerConnection.addIceCandidate(new RTCIceCandidate(c))
-          .catch(e => console.error('Error adding queued ICE candidate:', e));
-      });
-      iceQueues[callId][userId] = [];
-    }
-  } catch (err) {
-    console.error('Offer handling error:', err);
-  }
-});
-
-socket.on('answer', async ({ answer, userId, callId }) => {
-  console.log(`Answer received from ${userId}`);
-  if (callId !== currentCallId || !isCallActive || !peerConnections[userId]) return;
-
-  try {
-    await peerConnections[userId].setRemoteDescription(new RTCSessionDescription(answer));
-    console.log(`Remote description set for ${userId}`);
-
-    if (iceQueues[callId]?.[userId]) {
-      console.log(`Processing ${iceQueues[callId][userId].length} queued ICE candidates`);
-      iceQueues[callId][userId].forEach(c => {
-        peerConnections[userId].addIceCandidate(new RTCIceCandidate(c))
-          .catch(e => console.error('Error adding queued ICE candidate:', e));
-      });
-      iceQueues[callId][userId] = [];
-    }
-  } catch (err) {
-    console.error('Answer handling error:', err);
-  }
-});
-
-socket.on('ice-candidate', ({ candidate, userId, callId }) => {
-  console.log(`ICE candidate received from ${userId}`);
-  if (callId !== currentCallId || !isCallActive) return;
-
-  if (!peerConnections[userId]) {
-    console.log(`Queueing ICE candidate for ${userId}`);
-    if (!iceQueues[callId]) iceQueues[callId] = {};
-    if (!iceQueues[callId][userId]) iceQueues[callId][userId] = [];
-    iceQueues[callId][userId].push(candidate);
-    return;
-  }
-
-  try {
-    peerConnections[userId].addIceCandidate(new RTCIceCandidate(candidate))
-      .then(() => console.log(`ICE candidate added for ${userId}`))
-      .catch(e => console.error('Error adding ICE candidate:', e));
-  } catch (err) {
-    console.error('Error processing ICE candidate:', err);
-  }
-});
-
 socket.on('call-participants', ({ participants, callId }) => {
   console.log(`Call participants: ${participants.join(', ')}`);
   if (callId !== currentCallId || !isCallActive) return;
-
+  
   participants.forEach(async userId => {
     if (userId !== username && !peerConnections[userId]) {
       console.log(`Establishing connection with existing participant ${userId}`);
