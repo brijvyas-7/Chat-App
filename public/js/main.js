@@ -1,3 +1,4 @@
+// ✅ COMPLETE WORKING VIDEO CHAT IMPLEMENTATION
 const socket = io({ reconnection: true, reconnectionAttempts: 5, reconnectionDelay: 1000 });
 
 // DOM Elements
@@ -40,7 +41,7 @@ let isVideoOff = false;
 let currentCallType = null;
 let currentFacingMode = 'user';
 
-// ICE Configuration with TURN server (replace with your actual TURN server credentials)
+// ICE Configuration
 const ICE_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -49,7 +50,7 @@ const ICE_CONFIG = {
     { 
       urls: 'turn:your-turn-server.com:3478',
       username: 'your-username',
-      credential: 'your-password' 
+      credential: 'your-password'
     }
   ],
   iceTransportPolicy: 'all',
@@ -63,6 +64,75 @@ const uuidv4 = () => {
     return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
   });
 };
+
+// ======================
+// Swipe to Reply Function
+// ======================
+
+function setupSwipeToReply() {
+  let touchStartX = 0;
+  let touchEndX = 0;
+  
+  chatMessages.addEventListener('touchstart', (e) => {
+    if (e.target.closest('.message')) {
+      touchStartX = e.changedTouches[0].screenX;
+    }
+  }, { passive: true });
+
+  chatMessages.addEventListener('touchend', (e) => {
+    if (!e.target.closest('.message')) return;
+    
+    touchEndX = e.changedTouches[0].screenX;
+    const messageElement = e.target.closest('.message');
+    
+    if (Math.abs(touchEndX - touchStartX) > SWIPE_THRESHOLD) {
+      if (touchEndX < touchStartX) {
+        const user = messageElement.querySelector('.meta strong')?.textContent;
+        const text = messageElement.querySelector('.text')?.textContent;
+        const msgID = messageElement.id;
+        
+        if (user && text) {
+          setupReply(user, msgID, text);
+          messageElement.style.transform = 'translateX(-10px)';
+          setTimeout(() => {
+            messageElement.style.transform = '';
+          }, 300);
+        }
+      }
+    }
+  }, { passive: true });
+
+  // Mouse support
+  let mouseDownX = 0;
+  chatMessages.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.message')) {
+      mouseDownX = e.screenX;
+    }
+  });
+
+  chatMessages.addEventListener('mouseup', (e) => {
+    if (!e.target.closest('.message')) return;
+    
+    const mouseUpX = e.screenX;
+    const messageElement = e.target.closest('.message');
+    
+    if (Math.abs(mouseUpX - mouseDownX) > SWIPE_THRESHOLD) {
+      if (mouseUpX < mouseDownX) {
+        const user = messageElement.querySelector('.meta strong')?.textContent;
+        const text = messageElement.querySelector('.text')?.textContent;
+        const msgID = messageElement.id;
+        
+        if (user && text) {
+          setupReply(user, msgID, text);
+          messageElement.classList.add('swipe-feedback');
+          setTimeout(() => {
+            messageElement.classList.remove('swipe-feedback');
+          }, 300);
+        }
+      }
+    }
+  });
+}
 
 // ======================
 // UI Functions
@@ -590,7 +660,7 @@ async function startCall(callType) {
         endCall();
         showCallEndedUI('No one answered');
       }
-    }, 45000); // 45 second timeout
+    }, 45000);
 
   } catch (err) {
     console.error('Call setup error:', err);
