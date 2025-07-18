@@ -46,7 +46,7 @@ let isVideoOff = false;
 let currentCallType = null;
 let currentFacingMode = 'user';
 
-// Enhanced ICE Configuration with working TURN servers
+// Enhanced ICE Configuration
 const ICE_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -94,71 +94,6 @@ themeBtn.onclick = () => {
   localStorage.setItem('darkMode', isDark);
   chatMessages.classList.toggle('dark-bg', isDark);
 };
-
-// ======================
-// Swipe to Reply Functionality
-// ======================
-
-function setupSwipeToReply() {
-  chatMessages.addEventListener('touchstart', (e) => {
-    if (e.target.closest('.message')) {
-      touchStartX = e.changedTouches[0].screenX;
-    }
-  }, { passive: true });
-
-  chatMessages.addEventListener('touchend', (e) => {
-    if (!e.target.closest('.message')) return;
-    
-    touchEndX = e.changedTouches[0].screenX;
-    const messageElement = e.target.closest('.message');
-    
-    if (Math.abs(touchEndX - touchStartX) > SWIPE_THRESHOLD) {
-      if (touchEndX < touchStartX) {
-        const user = messageElement.querySelector('.meta strong')?.textContent;
-        const text = messageElement.querySelector('.text')?.textContent;
-        const msgID = messageElement.id;
-        
-        if (user && text) {
-          setupReply(user, msgID, text);
-          messageElement.style.transform = 'translateX(-10px)';
-          setTimeout(() => {
-            messageElement.style.transform = '';
-          }, 300);
-        }
-      }
-    }
-  }, { passive: true });
-
-  // Mouse support for desktop
-  chatMessages.addEventListener('mousedown', (e) => {
-    if (e.target.closest('.message')) {
-      touchStartX = e.screenX;
-    }
-  });
-
-  chatMessages.addEventListener('mouseup', (e) => {
-    if (!e.target.closest('.message')) return;
-    
-    const mouseUpX = e.screenX;
-    const messageElement = e.target.closest('.message');
-    
-    if (Math.abs(mouseUpX - touchStartX) > SWIPE_THRESHOLD) {
-      if (mouseUpX < touchStartX) {
-        const user = messageElement.querySelector('.meta strong')?.textContent;
-        const text = messageElement.querySelector('.text')?.textContent;
-        const msgID = messageElement.id;
-        
-        if (user && text) {
-          setupReply(user, msgID, text);
-          messageElement.classList.add('swipe-feedback');
-          setTimeout(() => {
-            messageElement.classList.remove('swipe-feedback');
-          }, 300);
-        }
-      }
-    }
-  });
-}
 
 // ======================
 // Chat Functions
@@ -212,94 +147,6 @@ function addMessage(msg) {
   setTimeout(() => chatMessages.scrollTo({ top: chatMessages.scrollHeight, behavior: 'smooth' }), 20);
 }
 
-// Typing Indicators
-msgInput.oninput = () => {
-  const now = Date.now();
-  if (now - lastTypingUpdate > 1000) {
-    socket.emit('typing', { room });
-    lastTypingUpdate = now;
-  }
-  clearTimeout(window._stopTyping);
-  window._stopTyping = setTimeout(() => socket.emit('stopTyping', { room }), 2000);
-};
-
-function showTypingIndicator(user) {
-  if (!document.querySelector('.typing-indicator')) {
-    const d = document.createElement('div');
-    d.className = 'typing-indicator other';
-    d.innerHTML = `<div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div><span class="typing-text">${user} is typing...</span>`;
-    chatMessages.appendChild(d);
-    chatMessages.scrollTo({ top: chatMessages.scrollHeight, behavior: 'smooth' });
-  }
-}
-
-// ======================
-// Video/Audio Elements
-// ======================
-
-function addVideoElement(type, userId, stream, isLocal = false) {
-  const videoGrid = document.getElementById('video-grid');
-  if (!videoGrid) {
-    console.error('Video grid not found!');
-    return null;
-  }
-
-  const existing = document.getElementById(`${type}-container-${userId}`);
-  if (existing) existing.remove();
-
-  const container = document.createElement('div');
-  container.className = `video-container ${isLocal ? 'local-video-container' : ''}`;
-  container.id = `${type}-container-${userId}`;
-
-  const video = document.createElement('video');
-  video.id = `${type}-video-${userId}`;
-  video.autoplay = true;
-  video.playsInline = true;
-  video.muted = isLocal;
-  
-  if (isLocal && currentCallType === 'video') {
-    video.style.transform = 'scaleX(-1)';
-  }
-
-  const label = document.createElement('div');
-  label.className = 'video-user-label';
-  label.textContent = userId === username ? 'You' : userId;
-
-  container.appendChild(video);
-  container.appendChild(label);
-  videoGrid.appendChild(container);
-
-  video.srcObject = stream;
-  
-  video.onloadedmetadata = () => {
-    video.play().catch(e => console.error('Video play failed:', e));
-  };
-
-  console.log(`Created ${type} video element for ${userId}`);
-  return video;
-}
-
-function addAudioElement(userId) {
-  const videoGrid = document.getElementById('video-grid');
-  if (!videoGrid) return;
-
-  const audioContainer = document.createElement('div');
-  audioContainer.className = 'audio-container';
-  audioContainer.id = `audio-container-${userId}`;
-
-  const userLabel = document.createElement('div');
-  userLabel.className = 'video-user-label';
-  userLabel.textContent = userId === username ? 'You' : userId;
-
-  const audioIcon = document.createElement('div');
-  audioIcon.className = 'audio-icon';
-  audioIcon.innerHTML = '<i class="fas fa-microphone"></i>';
-
-  audioContainer.appendChild(audioIcon);
-  audioContainer.appendChild(userLabel);
-  videoGrid.appendChild(audioContainer);
-}
-
 // ======================
 // Call UI Functions
 // ======================
@@ -325,7 +172,10 @@ function showCallUI(callType) {
   videoCallContainer.innerHTML = `
     <div class="video-call-active">
       <div id="video-grid" class="video-grid">
-        <!-- Videos will be added dynamically -->
+        <div id="local-container-${username}" class="video-container local-video-container">
+          <video id="local-video-${username}" autoplay playsinline muted></video>
+          <div class="video-user-label">You</div>
+        </div>
       </div>
       <div class="video-controls">
         <button id="toggle-audio-btn" class="control-btn audio-btn">
@@ -346,7 +196,15 @@ function showCallUI(callType) {
     </div>
   `;
 
-  videoCallContainer.classList.remove('d-none');
+  if (localStream) {
+    const localVideo = document.getElementById(`local-video-${username}`);
+    if (localVideo) {
+      localVideo.srcObject = localStream;
+      if (callType === 'video') {
+        localVideo.style.transform = 'scaleX(-1)';
+      }
+    }
+  }
 
   document.getElementById('toggle-audio-btn').onclick = toggleAudio;
   document.getElementById('end-call-btn').onclick = endCall;
@@ -354,48 +212,72 @@ function showCallUI(callType) {
     document.getElementById('toggle-video-btn').onclick = toggleVideo;
     document.getElementById('flip-camera-btn').onclick = flipCamera;
   }
-
-  if (callType === 'video' && localStream) {
-    addVideoElement('local', username, localStream, true);
-  }
 }
 
-function hideCallUI() {
-  videoCallContainer.classList.add('d-none');
-  callSound.pause();
-  clearTimeout(callTimeout);
+function addVideoElement(userId, stream, isLocal = false) {
+  const videoGrid = document.getElementById('video-grid');
+  if (!videoGrid) return;
+
+  const existing = document.getElementById(`remote-container-${userId}`);
+  if (existing) existing.remove();
+
+  const container = document.createElement('div');
+  container.className = `video-container ${isLocal ? 'local-video-container' : ''}`;
+  container.id = `remote-container-${userId}`;
+
+  const video = document.createElement('video');
+  video.id = `remote-video-${userId}`;
+  video.autoplay = true;
+  video.playsInline = true;
+  video.muted = isLocal;
+
+  const label = document.createElement('div');
+  label.className = 'video-user-label';
+  label.textContent = userId === username ? 'You' : userId;
+
+  container.appendChild(video);
+  container.appendChild(label);
+  videoGrid.appendChild(container);
+
+  video.srcObject = stream;
+  video.onloadedmetadata = () => {
+    video.play().catch(e => console.error('Video play failed:', e));
+  };
 }
 
-function showCallEndedUI(msg) {
-  const div = document.createElement('div');
-  div.className = 'call-ended-alert';
-  div.innerHTML = `
-    <div class="alert-content">
-      <p>${msg}</p>
-      <button id="close-alert-btn" class="btn btn-primary">OK</button>
-    </div>
-  `;
-  document.body.appendChild(div);
-  document.getElementById('close-alert-btn').onclick = () => div.remove();
+function addAudioElement(userId) {
+  const videoGrid = document.getElementById('video-grid');
+  if (!videoGrid) return;
+
+  const audioContainer = document.createElement('div');
+  audioContainer.className = 'audio-container';
+  audioContainer.id = `audio-container-${userId}`;
+
+  const userLabel = document.createElement('div');
+  userLabel.className = 'video-user-label';
+  userLabel.textContent = userId === username ? 'You' : userId;
+
+  const audioIcon = document.createElement('div');
+  audioIcon.className = 'audio-icon';
+  audioIcon.innerHTML = '<i class="fas fa-microphone"></i>';
+
+  audioContainer.appendChild(audioIcon);
+  audioContainer.appendChild(userLabel);
+  videoGrid.appendChild(audioContainer);
 }
 
 // ======================
 // Media Controls
 // ======================
 
-function updateMediaButtons() {
-  const aBtn = document.getElementById('toggle-audio-btn');
-  const vBtn = document.getElementById('toggle-video-btn');
-  if (aBtn) aBtn.innerHTML = `<i class="fas fa-microphone${isAudioMuted ? '-slash' : ''}"></i>`;
-  if (vBtn) vBtn.innerHTML = `<i class="fas fa-video${isVideoOff ? '-slash' : ''}"></i>`;
-}
-
 async function toggleAudio() {
   isAudioMuted = !isAudioMuted;
   if (localStream) {
     localStream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
   }
-  updateMediaButtons();
+  
+  const aBtn = document.getElementById('toggle-audio-btn');
+  if (aBtn) aBtn.innerHTML = `<i class="fas fa-microphone${isAudioMuted ? '-slash' : ''}"></i>`;
   
   if (isCallActive && currentCallId) {
     socket.emit('mute-state', { 
@@ -412,7 +294,9 @@ async function toggleVideo() {
   if (localStream) {
     localStream.getVideoTracks().forEach(t => t.enabled = !isVideoOff);
   }
-  updateMediaButtons();
+  
+  const vBtn = document.getElementById('toggle-video-btn');
+  if (vBtn) vBtn.innerHTML = `<i class="fas fa-video${isVideoOff ? '-slash' : ''}"></i>`;
   
   if (isCallActive && currentCallId) {
     socket.emit('video-state', { 
@@ -456,7 +340,7 @@ async function flipCamera() {
 }
 
 // ======================
-// Peer Connection Management (FIXED VERSION)
+// Peer Connection Management
 // ======================
 
 async function establishPeerConnection(userId, isInitiator = false) {
@@ -469,7 +353,6 @@ async function establishPeerConnection(userId, isInitiator = false) {
   const peerConnection = new RTCPeerConnection(ICE_CONFIG);
   peerConnections[userId] = peerConnection;
 
-  // Enhanced connection state handling
   peerConnection.oniceconnectionstatechange = () => {
     const state = peerConnection.iceConnectionState;
     console.log(`ICE connection state with ${userId}: ${state}`);
@@ -496,7 +379,6 @@ async function establishPeerConnection(userId, isInitiator = false) {
     }
   };
 
-  // Add local tracks
   if (localStream) {
     localStream.getTracks().forEach(track => {
       peerConnection.addTrack(track, localStream);
@@ -504,43 +386,19 @@ async function establishPeerConnection(userId, isInitiator = false) {
     });
   }
 
-  // Handle incoming media - FIXED VERSION
   peerConnection.ontrack = (e) => {
-    console.log('Remote track received:', e.streams);
+    if (!e.streams || e.streams.length === 0) return;
     
-    if (!e.streams || e.streams.length === 0) {
-      console.warn('No streams in track event');
-      return;
-    }
-
     const stream = e.streams[0];
     remoteStreams[userId] = stream;
 
-    // Debug all received tracks
-    stream.getTracks().forEach(track => {
-      console.log(`Remote ${track.kind} track:`, track.readyState);
-      track.onended = () => console.log(`${track.kind} track ended`);
-    });
-
     if (currentCallType === 'video') {
-      let videoElem = document.getElementById(`remote-video-${userId}`);
-      if (!videoElem) {
-        videoElem = addVideoElement('remote', userId, stream);
-      } else {
-        videoElem.srcObject = stream;
-      }
-      
-      videoElem.onloadedmetadata = () => {
-        videoElem.play().catch(e => console.error('Video play error:', e));
-      };
+      addVideoElement(userId, stream);
     } else {
-      if (!document.getElementById(`audio-container-${userId}`)) {
-        addAudioElement(userId);
-      }
+      addAudioElement(userId);
     }
   };
 
-  // ICE Candidate handling
   peerConnection.onicecandidate = (e) => {
     if (e.candidate) {
       console.log('Sending ICE candidate to', userId);
@@ -550,12 +408,9 @@ async function establishPeerConnection(userId, isInitiator = false) {
         callId: currentCallId,
         targetUser: userId
       });
-    } else {
-      console.log('ICE gathering complete');
     }
   };
 
-  // Create offer if initiator
   if (isInitiator) {
     try {
       console.log(`Creating offer for ${userId}`);
@@ -576,7 +431,6 @@ async function establishPeerConnection(userId, isInitiator = false) {
     }
   }
 
-  // Process queued ICE candidates
   if (iceQueues[currentCallId]?.[userId]?.length > 0) {
     console.log(`Processing ${iceQueues[currentCallId][userId].length} queued ICE candidates`);
     for (const candidate of iceQueues[currentCallId][userId]) {
@@ -637,7 +491,6 @@ async function startCall(callType) {
   if (isCallActive) return;
   
   try {
-    // Test permissions first
     const mediaConstraints = {
       audio: true,
       video: callType === 'video' ? { facingMode: 'user' } : false
@@ -656,7 +509,6 @@ async function startCall(callType) {
   showCallingUI(callType);
 
   try {
-    // Get the actual stream
     localStream = await navigator.mediaDevices.getUserMedia({
       audio: true,
       video: callType === 'video' ? { facingMode: 'user' } : false
@@ -691,37 +543,48 @@ async function handleIncomingCall({ callType, callId, caller }) {
     return;
   }
 
-  const accept = confirm(`${caller} is ${callType === 'audio' ? 'audio' : 'video'} calling. Accept?`);
-  if (!accept) {
+  videoCallContainer.innerHTML = `
+    <div class="incoming-call-ui">
+      <div class="caller-info">${caller} is calling...</div>
+      <div class="call-type">${callType === 'audio' ? 'Audio Call' : 'Video Call'}</div>
+      <div class="call-buttons">
+        <button id="accept-call-btn" class="btn btn-success">
+          <i class="fas fa-phone"></i> Accept
+        </button>
+        <button id="reject-call-btn" class="btn btn-danger">
+          <i class="fas fa-phone-slash"></i> Reject
+        </button>
+      </div>
+    </div>
+  `;
+  videoCallContainer.classList.remove('d-none');
+
+  document.getElementById('accept-call-btn').onclick = async () => {
+    isCallActive = true;
+    currentCallType = callType;
+    currentCallId = callId;
+    iceQueues[callId] = {};
+
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: callType === 'video' ? { facingMode: 'user' } : false
+      });
+
+      showCallUI(callType);
+      socket.emit('accept-call', { room, callId });
+      socket.emit('get-call-participants', { room, callId });
+
+    } catch (err) {
+      console.error('Call setup failed:', err);
+      endCall();
+    }
+  };
+
+  document.getElementById('reject-call-btn').onclick = () => {
     socket.emit('reject-call', { room, callId });
-    return;
-  }
-
-  isCallActive = true;
-  currentCallType = callType;
-  currentCallId = callId;
-  iceQueues[callId] = {};
-
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: callType === 'video' ? { facingMode: 'user' } : false
-    });
-    
-    console.log('Obtained media stream with tracks:', 
-      `Audio: ${stream.getAudioTracks().length}, ` +
-      `Video: ${stream.getVideoTracks().length}`);
-
-    localStream = stream;
-    showCallUI(callType);
-    socket.emit('accept-call', { room, callId });
-    socket.emit('get-call-participants', { room, callId });
-
-  } catch (err) {
-    console.error('Call setup failed:', err);
-    alert(`Failed to start call: ${err.message}`);
-    endCall();
-  }
+    hideCallUI();
+  };
 }
 
 // ======================
@@ -737,16 +600,6 @@ socket.on('message', msg => {
   console.log('New message received');
   if (msg.username !== username && !isMuted) notificationSound.play().catch(() => {});
   addMessage(msg);
-});
-
-socket.on('showTyping', ({ username: u }) => {
-  console.log(`${u} is typing`);
-  u !== username && showTypingIndicator(u);
-});
-
-socket.on('stopTyping', () => {
-  console.log('Typing stopped');
-  document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
 });
 
 socket.on('incoming-call', handleIncomingCall);
@@ -817,22 +670,10 @@ socket.on('answer', async ({ answer, userId, callId }) => {
   try {
     await peerConnections[userId].setRemoteDescription(new RTCSessionDescription(answer));
     
-    // Check if we have video and add if needed
-    const pc = peerConnections[userId];
-    const receivers = pc.getReceivers();
-    receivers.forEach(receiver => {
-      if (receiver.track && receiver.track.kind === 'video' && !remoteStreams[userId]) {
-        const stream = new MediaStream([receiver.track]);
-        remoteStreams[userId] = stream;
-        addVideoElement('remote', userId, stream);
-      }
-    });
-
-    // Process queued candidates
     if (iceQueues[callId]?.[userId]?.length > 0) {
       for (const candidate of iceQueues[callId][userId]) {
         try {
-          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          await peerConnections[userId].addIceCandidate(new RTCIceCandidate(candidate));
         } catch (e) {
           console.error('Error adding queued ICE candidate:', e);
         }
@@ -877,29 +718,11 @@ socket.on('user-left-call', ({ userId }) => {
 socket.on('call-ended', () => {
   console.log('Call ended by remote peer');
   endCall();
-  showCallEndedUI('Call ended');
 });
 
 socket.on('call-rejected', ({ reason }) => {
   console.log(`Call rejected: ${reason}`);
   endCall();
-  showCallEndedUI(reason === 'busy' ? 'User is busy' : 'Call rejected');
-});
-
-socket.on('mute-state', ({ userId, isAudioMuted: muted }) => {
-  console.log(`${userId} ${muted ? 'muted' : 'unmuted'} audio`);
-  const userLabel = document.querySelector(`#remote-container-${userId} .video-user-label`);
-  if (userLabel) {
-    userLabel.innerHTML = `${userId === username ? 'You' : userId} ${muted ? '(muted)' : ''}`;
-  }
-});
-
-socket.on('video-state', ({ userId, isVideoOff: videoOff }) => {
-  console.log(`${userId} ${videoOff ? 'disabled' : 'enabled'} video`);
-  const videoElem = document.getElementById(`remote-video-${userId}`);
-  if (videoElem) {
-    videoElem.style.display = videoOff ? 'none' : 'block';
-  }
 });
 
 // ======================
@@ -928,6 +751,5 @@ window.addEventListener('beforeunload', () => {
   if (!username || !room) return alert('Missing username or room!');
   initDarkMode();
   roomNameElem.textContent = room;
-  setupSwipeToReply();
   console.log('Application initialized');
 })();
