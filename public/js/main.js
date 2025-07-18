@@ -30,6 +30,8 @@ let replyTo = null;
 let isMuted = localStorage.getItem('isMuted') === 'true';
 let lastTypingUpdate = 0;
 const SWIPE_THRESHOLD = 60;
+let touchStartX = 0;
+let touchEndX = 0;
 
 // WebRTC Variables
 let peerConnections = {};
@@ -49,19 +51,13 @@ const ICE_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
     { 
+      urls: 'turn:numb.viagenie.ca',
+      credential: 'muazkh',
+      username: 'webrtc@live.com'
+    },
+    {
       urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
-    { 
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
-    { 
-      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
       username: 'openrelayproject',
       credential: 'openrelayproject'
     }
@@ -94,18 +90,70 @@ themeBtn.onclick = () => {
   chatMessages.classList.toggle('dark-bg', isDark);
 };
 
+// ======================
+// Swipe to Reply Functionality
+// ======================
+
 function setupSwipeToReply() {
-  console.log("Swipe to reply not implemented yet");
+  chatMessages.addEventListener('touchstart', (e) => {
+    if (e.target.closest('.message')) {
+      touchStartX = e.changedTouches[0].screenX;
+    }
+  }, { passive: true });
+
+  chatMessages.addEventListener('touchend', (e) => {
+    if (!e.target.closest('.message')) return;
+    
+    touchEndX = e.changedTouches[0].screenX;
+    const messageElement = e.target.closest('.message');
+    
+    if (Math.abs(touchEndX - touchStartX) > SWIPE_THRESHOLD) {
+      if (touchEndX < touchStartX) {
+        const user = messageElement.querySelector('.meta strong')?.textContent;
+        const text = messageElement.querySelector('.text')?.textContent;
+        const msgID = messageElement.id;
+        
+        if (user && text) {
+          setupReply(user, msgID, text);
+          messageElement.style.transform = 'translateX(-10px)';
+          setTimeout(() => {
+            messageElement.style.transform = '';
+          }, 300);
+        }
+      }
+    }
+  }, { passive: true });
+
+  // Mouse support for desktop
+  chatMessages.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.message')) {
+      touchStartX = e.screenX;
+    }
+  });
+
+  chatMessages.addEventListener('mouseup', (e) => {
+    if (!e.target.closest('.message')) return;
+    
+    const mouseUpX = e.screenX;
+    const messageElement = e.target.closest('.message');
+    
+    if (Math.abs(mouseUpX - touchStartX) > SWIPE_THRESHOLD) {
+      if (mouseUpX < touchStartX) {
+        const user = messageElement.querySelector('.meta strong')?.textContent;
+        const text = messageElement.querySelector('.text')?.textContent;
+        const msgID = messageElement.id;
+        
+        if (user && text) {
+          setupReply(user, msgID, text);
+          messageElement.classList.add('swipe-feedback');
+          setTimeout(() => {
+            messageElement.classList.remove('swipe-feedback');
+          }, 300);
+        }
+      }
+    }
+  });
 }
-
-// Mute Toggle
-muteBtn.onclick = () => {
-  isMuted = !isMuted;
-  localStorage.setItem('isMuted', isMuted);
-  muteBtn.innerHTML = isMuted ? '<i class="fas fa-bell-slash"></i>' : '<i class="fas fa-bell"></i>';
-};
-
-muteBtn.innerHTML = isMuted ? '<i class="fas fa-bell-slash"></i>' : '<i class="fas fa-bell"></i>';
 
 // ======================
 // Chat Functions
@@ -413,17 +461,25 @@ async function establishPeerConnection(userId, isInitiator = false) {
   const peerConnection = new RTCPeerConnection(ICE_CONFIG);
   peerConnections[userId] = peerConnection;
 
-  // Debugging handlers
+  // Enhanced connection state handling
   peerConnection.oniceconnectionstatechange = () => {
-    console.log(`ICE connection state with ${userId}: ${peerConnection.iceConnectionState}`);
-    if (peerConnection.iceConnectionState === 'failed') {
+    const state = peerConnection.iceConnectionState;
+    console.log(`ICE connection state with ${userId}: ${state}`);
+    
+    if (state === 'failed') {
+      console.warn('ICE connection failed, restarting ICE');
       peerConnection.restartIce();
     }
   };
 
   peerConnection.onconnectionstatechange = () => {
-    console.log(`Connection state with ${userId}: ${peerConnection.connectionState}`);
-    if (['disconnected', 'failed'].includes(peerConnection.connectionState)) {
+    const state = peerConnection.connectionState;
+    console.log(`Connection state with ${userId}: ${state}`);
+    
+    if (state === 'connected') {
+      console.log(`Successfully connected to ${userId}`);
+    } else if (['disconnected', 'failed'].includes(state)) {
+      console.warn(`Connection with ${userId} ${state}`);
       setTimeout(() => {
         if (peerConnection.connectionState !== 'connected') {
           removePeerConnection(userId);
@@ -451,6 +507,12 @@ async function establishPeerConnection(userId, isInitiator = false) {
 
     const stream = e.streams[0];
     remoteStreams[userId] = stream;
+
+    // Debug all received tracks
+    stream.getTracks().forEach(track => {
+      console.log(`Remote ${track.kind} track:`, track.readyState);
+      track.onended = () => console.log(`${track.kind} track ended`);
+    });
 
     if (currentCallType === 'video') {
       let videoElem = document.getElementById(`remote-video-${userId}`);
@@ -480,6 +542,8 @@ async function establishPeerConnection(userId, isInitiator = false) {
         callId: currentCallId,
         targetUser: userId
       });
+    } else {
+      console.log('ICE gathering complete');
     }
   };
 
