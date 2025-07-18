@@ -68,8 +68,10 @@ io.on('connection', (socket) => {
   /* ====================== */
 
   // Call initiation
-  socket.on('call-initiate', ({ room, callType, caller }) => {
+  socket.on('call-initiate', (data) => {
+    const { room, callType, caller } = data;
     const callId = uuidv4();
+    
     activeCalls[room] = activeCalls[room] || {};
     activeCalls[room][callId] = {
       callId,
@@ -80,6 +82,7 @@ io.on('connection', (socket) => {
       iceCandidates: {}
     };
 
+    console.log(`Call initiated by ${caller} in ${room} (${callType})`);
     socket.to(room).emit('incoming-call', { 
       callId, 
       callType, 
@@ -96,6 +99,15 @@ io.on('connection', (socket) => {
     if (!user) return;
 
     call.participants.push(user.username);
+    console.log(`Call accepted by ${user.username} in ${room}`);
+    
+    // Notify all participants about the new participant
+    io.to(room).emit('user-joined-call', { 
+      userId: user.username,
+      callId
+    });
+    
+    // Send the acceptance to the caller
     socket.to(room).emit('call-accepted', { 
       callId,
       userId: user.username 
@@ -119,6 +131,7 @@ io.on('connection', (socket) => {
     if (!call) return;
 
     call.offers[targetUser] = offer;
+    console.log(`Forwarding offer from ${getCurrentUser(socket.id)?.username} to ${targetUser}`);
     socket.to(room).emit('offer', { 
       offer, 
       callId, 
@@ -133,6 +146,7 @@ io.on('connection', (socket) => {
     if (!call) return;
 
     call.answers[targetUser] = answer;
+    console.log(`Forwarding answer from ${getCurrentUser(socket.id)?.username} to ${targetUser}`);
     socket.to(room).emit('answer', { 
       answer, 
       callId,
@@ -148,6 +162,7 @@ io.on('connection', (socket) => {
 
     call.iceCandidates[targetUser] = call.iceCandidates[targetUser] || [];
     call.iceCandidates[targetUser].push(candidate);
+    console.log(`Forwarding ICE candidate from ${getCurrentUser(socket.id)?.username} to ${targetUser}`);
     socket.to(room).emit('ice-candidate', { 
       candidate, 
       callId,
@@ -158,6 +173,7 @@ io.on('connection', (socket) => {
 
   // Mute state
   socket.on('mute-state', ({ room, callId, isAudioMuted, userId }) => {
+    console.log(`User ${userId} ${isAudioMuted ? 'muted' : 'unmuted'} audio`);
     socket.to(room).emit('mute-state', {
       callId,
       userId,
@@ -167,6 +183,7 @@ io.on('connection', (socket) => {
 
   // Video state
   socket.on('video-state', ({ room, callId, isVideoOff, userId }) => {
+    console.log(`User ${userId} ${isVideoOff ? 'disabled' : 'enabled'} video`);
     socket.to(room).emit('video-state', {
       callId,
       userId,
@@ -179,13 +196,27 @@ io.on('connection', (socket) => {
     const call = activeCalls[room]?.[callId];
     if (!call) return;
 
+    console.log(`Call ${callId} ended in room ${room}`);
     socket.to(room).emit('call-ended', { callId });
     delete activeCalls[room][callId];
   });
 
   // Call rejection
   socket.on('reject-call', ({ room, callId, reason }) => {
+    console.log(`Call ${callId} rejected in room ${room}: ${reason}`);
     socket.to(room).emit('call-rejected', { callId, reason });
+  });
+
+  // User leaving the call
+  socket.on('leave-call', ({ room, callId }) => {
+    const user = getCurrentUser(socket.id);
+    if (!user) return;
+
+    console.log(`User ${user.username} left call ${callId} in room ${room}`);
+    socket.to(room).emit('user-left-call', { 
+      userId: user.username,
+      callId
+    });
   });
 
   // Disconnection
