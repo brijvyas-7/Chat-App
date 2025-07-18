@@ -60,6 +60,11 @@ const ICE_CONFIG = {
       urls: 'turn:openrelay.metered.ca:80',
       username: 'openrelayproject',
       credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:turn.bistri.com:80',
+      credential: 'homeo',
+      username: 'homeo'
     }
   ],
   iceTransportPolicy: 'all',
@@ -451,11 +456,14 @@ async function flipCamera() {
 }
 
 // ======================
-// Peer Connection Management
+// Peer Connection Management (FIXED VERSION)
 // ======================
 
 async function establishPeerConnection(userId, isInitiator = false) {
-  if (!isCallActive || peerConnections[userId]) return;
+  if (peerConnections[userId]) {
+    console.log(`Already have connection with ${userId}`);
+    return;
+  }
 
   console.log(`Creating peer connection with ${userId}`);
   const peerConnection = new RTCPeerConnection(ICE_CONFIG);
@@ -496,7 +504,7 @@ async function establishPeerConnection(userId, isInitiator = false) {
     });
   }
 
-  // Handle incoming media
+  // Handle incoming media - FIXED VERSION
   peerConnection.ontrack = (e) => {
     console.log('Remote track received:', e.streams);
     
@@ -809,11 +817,22 @@ socket.on('answer', async ({ answer, userId, callId }) => {
   try {
     await peerConnections[userId].setRemoteDescription(new RTCSessionDescription(answer));
     
+    // Check if we have video and add if needed
+    const pc = peerConnections[userId];
+    const receivers = pc.getReceivers();
+    receivers.forEach(receiver => {
+      if (receiver.track && receiver.track.kind === 'video' && !remoteStreams[userId]) {
+        const stream = new MediaStream([receiver.track]);
+        remoteStreams[userId] = stream;
+        addVideoElement('remote', userId, stream);
+      }
+    });
+
+    // Process queued candidates
     if (iceQueues[callId]?.[userId]?.length > 0) {
-      console.log(`Processing ${iceQueues[callId][userId].length} queued ICE candidates`);
       for (const candidate of iceQueues[callId][userId]) {
         try {
-          await peerConnections[userId].addIceCandidate(new RTCIceCandidate(candidate));
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
         } catch (e) {
           console.error('Error adding queued ICE candidate:', e);
         }
