@@ -1,4 +1,4 @@
-// ✅ COMPLETE WORKING VIDEO CHAT IMPLEMENTATION
+// ✅ COMPLETE WORKING VIDEO CHAT IMPLEMENTATION (FIXED VERSION)
 const socket = io({ reconnection: true, reconnectionAttempts: 5, reconnectionDelay: 1000 });
 
 // DOM Elements
@@ -239,7 +239,8 @@ const swipeFeedbackCSS = `
     gap: 10px;
     padding: 10px;
     width: 100%;
-    height: 100%;
+    height: calc(100% - 60px);
+    overflow-y: auto;
   }
   
   .video-container {
@@ -247,6 +248,7 @@ const swipeFeedbackCSS = `
     background: #000;
     border-radius: 8px;
     overflow: hidden;
+    aspect-ratio: 4/3;
   }
   
   .video-container video {
@@ -268,6 +270,19 @@ const swipeFeedbackCSS = `
   
   .local-video-container {
     order: -1;
+  }
+  
+  .video-grid:has(> .video-container:only-child),
+  .video-grid:has(> .video-container:nth-child(2):last-child) {
+    grid-template-columns: 1fr;
+  }
+  
+  .video-grid:has(> .video-container:nth-child(2):last-child) .video-container {
+    height: 50%;
+  }
+  
+  .video-container.speaking {
+    box-shadow: 0 0 10px 3px rgba(0, 255, 0, 0.5);
   }
   
   .audio-container {
@@ -404,7 +419,7 @@ function addVideoElement(type, userId, stream, isLocal = false) {
   container.appendChild(label);
   videoGrid.appendChild(container);
 
-  // Critical: Attach the stream
+  // Attach the stream
   video.srcObject = stream;
   
   video.onloadedmetadata = () => {
@@ -557,7 +572,7 @@ async function startCall(callType) {
         endCall();
         showCallEndedUI('No one answered');
       }
-    }, 30000);
+    }, 45000); // Increased from 30s to 45s
 
   } catch (err) {
     console.error('Call setup error:', err);
@@ -584,9 +599,6 @@ async function handleIncomingCall({ callType, callId, caller }) {
   iceQueues[callId] = {};
 
   try {
-    const permissions = await navigator.permissions.query({ name: 'camera' });
-    console.log('Camera permission state:', permissions.state);
-    
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: true,
       video: callType === 'video' ? { facingMode: 'user' } : false
@@ -619,7 +631,10 @@ async function establishPeerConnection(userId, isInitiator = false) {
   const peerConnection = new RTCPeerConnection(ICE_CONFIG);
   peerConnections[userId] = peerConnection;
 
-  // Add local tracks
+  // Clear any existing remote stream
+  delete remoteStreams[userId];
+
+  // Add local tracks if we have them
   if (localStream) {
     localStream.getTracks().forEach(track => {
       peerConnection.addTrack(track, localStream);
@@ -627,7 +642,7 @@ async function establishPeerConnection(userId, isInitiator = false) {
     });
   }
 
-  // FIXED: Enhanced remote stream handling
+  // Enhanced remote stream handling
   peerConnection.ontrack = (e) => {
     console.log('Remote track received:', e.streams);
     
@@ -639,20 +654,29 @@ async function establishPeerConnection(userId, isInitiator = false) {
     const stream = e.streams[0];
     remoteStreams[userId] = stream;
 
-    // For video calls, always create video element
+    // Check if we already have a video element for this user
+    let videoElem = document.getElementById(`remote-video-${userId}`);
+    
     if (currentCallType === 'video') {
-      const videoElem = addVideoElement('remote', userId, stream);
+      if (!videoElem) {
+        videoElem = addVideoElement('remote', userId, stream);
+      } else {
+        // Update existing video element
+        videoElem.srcObject = stream;
+      }
       
-      // Double-attach stream to ensure it works
-      setTimeout(() => {
-        if (videoElem && (!videoElem.srcObject || videoElem.srcObject.getTracks().length === 0)) {
-          console.log('Ensuring stream is attached');
-          videoElem.srcObject = stream;
-          videoElem.play().catch(e => console.error('Video play error:', e));
-        }
-      }, 300);
+      // Ensure video plays
+      videoElem.onloadedmetadata = () => {
+        videoElem.play().catch(e => console.error('Video play error:', e));
+      };
+      
+      // Try to play immediately as well
+      videoElem.play().catch(e => console.error('Immediate play failed:', e));
     } else {
-      addAudioElement(userId);
+      // For audio calls, ensure we have an audio indicator
+      if (!document.getElementById(`audio-container-${userId}`)) {
+        addAudioElement(userId);
+      }
     }
   };
 
@@ -666,6 +690,19 @@ async function establishPeerConnection(userId, isInitiator = false) {
         targetUser: userId
       });
     }
+  };
+
+  // Debugging handlers
+  peerConnection.oniceconnectionstatechange = () => {
+    console.log(`ICE connection state with ${userId}: ${peerConnection.iceConnectionState}`);
+  };
+
+  peerConnection.onsignalingstatechange = () => {
+    console.log(`Signaling state with ${userId}: ${peerConnection.signalingState}`);
+  };
+
+  peerConnection.onnegotiationneeded = () => {
+    console.log(`Negotiation needed with ${userId}`);
   };
 
   // Connection state handling
