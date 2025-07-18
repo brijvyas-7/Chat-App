@@ -1,5 +1,9 @@
-// ✅ COMPLETE WORKING VIDEO CHAT IMPLEMENTATION
-const socket = io({ reconnection: true, reconnectionAttempts: 5, reconnectionDelay: 1000 });
+// Complete Video Chat Implementation
+const socket = io({ 
+  reconnection: true, 
+  reconnectionAttempts: 5, 
+  reconnectionDelay: 1000 
+});
 
 // DOM Elements
 const msgInput = document.getElementById('msg');
@@ -47,11 +51,12 @@ const ICE_CONFIG = {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    { 
-      urls: 'turn:your-turn-server.com:3478',
-      username: 'your-username',
-      credential: 'your-password'
-    }
+    // Add your TURN server here if needed
+    // { 
+    //   urls: 'turn:your-turn-server.com:3478',
+    //   username: 'your-username',
+    //   credential: 'your-password'
+    // }
   ],
   iceTransportPolicy: 'all',
   iceCandidatePoolSize: 10
@@ -64,75 +69,6 @@ const uuidv4 = () => {
     return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
   });
 };
-
-// ======================
-// Swipe to Reply Function
-// ======================
-
-function setupSwipeToReply() {
-  let touchStartX = 0;
-  let touchEndX = 0;
-  
-  chatMessages.addEventListener('touchstart', (e) => {
-    if (e.target.closest('.message')) {
-      touchStartX = e.changedTouches[0].screenX;
-    }
-  }, { passive: true });
-
-  chatMessages.addEventListener('touchend', (e) => {
-    if (!e.target.closest('.message')) return;
-    
-    touchEndX = e.changedTouches[0].screenX;
-    const messageElement = e.target.closest('.message');
-    
-    if (Math.abs(touchEndX - touchStartX) > SWIPE_THRESHOLD) {
-      if (touchEndX < touchStartX) {
-        const user = messageElement.querySelector('.meta strong')?.textContent;
-        const text = messageElement.querySelector('.text')?.textContent;
-        const msgID = messageElement.id;
-        
-        if (user && text) {
-          setupReply(user, msgID, text);
-          messageElement.style.transform = 'translateX(-10px)';
-          setTimeout(() => {
-            messageElement.style.transform = '';
-          }, 300);
-        }
-      }
-    }
-  }, { passive: true });
-
-  // Mouse support
-  let mouseDownX = 0;
-  chatMessages.addEventListener('mousedown', (e) => {
-    if (e.target.closest('.message')) {
-      mouseDownX = e.screenX;
-    }
-  });
-
-  chatMessages.addEventListener('mouseup', (e) => {
-    if (!e.target.closest('.message')) return;
-    
-    const mouseUpX = e.screenX;
-    const messageElement = e.target.closest('.message');
-    
-    if (Math.abs(mouseUpX - mouseDownX) > SWIPE_THRESHOLD) {
-      if (mouseUpX < mouseDownX) {
-        const user = messageElement.querySelector('.meta strong')?.textContent;
-        const text = messageElement.querySelector('.text')?.textContent;
-        const msgID = messageElement.id;
-        
-        if (user && text) {
-          setupReply(user, msgID, text);
-          messageElement.classList.add('swipe-feedback');
-          setTimeout(() => {
-            messageElement.classList.remove('swipe-feedback');
-          }, 300);
-        }
-      }
-    }
-  });
-}
 
 // ======================
 // UI Functions
@@ -233,6 +169,142 @@ function showTypingIndicator(user) {
 }
 
 // ======================
+// Swipe to Reply
+// ======================
+
+function setupSwipeToReply() {
+  let touchStartX = 0;
+  let touchEndX = 0;
+  
+  chatMessages.addEventListener('touchstart', (e) => {
+    if (e.target.closest('.message')) {
+      touchStartX = e.changedTouches[0].screenX;
+    }
+  }, { passive: true });
+
+  chatMessages.addEventListener('touchend', (e) => {
+    if (!e.target.closest('.message')) return;
+    
+    touchEndX = e.changedTouches[0].screenX;
+    const messageElement = e.target.closest('.message');
+    
+    if (Math.abs(touchEndX - touchStartX) > SWIPE_THRESHOLD) {
+      if (touchEndX < touchStartX) {
+        const user = messageElement.querySelector('.meta strong')?.textContent;
+        const text = messageElement.querySelector('.text')?.textContent;
+        const msgID = messageElement.id;
+        
+        if (user && text) {
+          setupReply(user, msgID, text);
+          messageElement.style.transform = 'translateX(-10px)';
+          setTimeout(() => {
+            messageElement.style.transform = '';
+          }, 300);
+        }
+      }
+    }
+  }, { passive: true });
+
+  // Mouse support
+  let mouseDownX = 0;
+  chatMessages.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.message')) {
+      mouseDownX = e.screenX;
+    }
+  });
+
+  chatMessages.addEventListener('mouseup', (e) => {
+    if (!e.target.closest('.message')) return;
+    
+    const mouseUpX = e.screenX;
+    const messageElement = e.target.closest('.message');
+    
+    if (Math.abs(mouseUpX - mouseDownX) > SWIPE_THRESHOLD) {
+      if (mouseUpX < mouseDownX) {
+        const user = messageElement.querySelector('.meta strong')?.textContent;
+        const text = messageElement.querySelector('.text')?.textContent;
+        const msgID = messageElement.id;
+        
+        if (user && text) {
+          setupReply(user, msgID, text);
+          messageElement.classList.add('swipe-feedback');
+          setTimeout(() => {
+            messageElement.classList.remove('swipe-feedback');
+          }, 300);
+        }
+      }
+    }
+  });
+}
+
+// ======================
+// Video/Audio Elements
+// ======================
+
+function addVideoElement(type, userId, stream, isLocal = false) {
+  const videoGrid = document.getElementById('video-grid');
+  if (!videoGrid) {
+    console.error('Video grid not found!');
+    return null;
+  }
+
+  const existing = document.getElementById(`${type}-container-${userId}`);
+  if (existing) existing.remove();
+
+  const container = document.createElement('div');
+  container.className = `video-container ${isLocal ? 'local-video-container' : ''}`;
+  container.id = `${type}-container-${userId}`;
+
+  const video = document.createElement('video');
+  video.id = `${type}-video-${userId}`;
+  video.autoplay = true;
+  video.playsInline = true;
+  video.muted = isLocal;
+  
+  if (isLocal && currentCallType === 'video') {
+    video.style.transform = 'scaleX(-1)';
+  }
+
+  const label = document.createElement('div');
+  label.className = 'video-user-label';
+  label.textContent = userId === username ? 'You' : userId;
+
+  container.appendChild(video);
+  container.appendChild(label);
+  videoGrid.appendChild(container);
+
+  video.srcObject = stream;
+  
+  video.onloadedmetadata = () => {
+    video.play().catch(e => console.error('Video play failed:', e));
+  };
+
+  console.log(`Created ${type} video element for ${userId}`);
+  return video;
+}
+
+function addAudioElement(userId) {
+  const videoGrid = document.getElementById('video-grid');
+  if (!videoGrid) return;
+
+  const audioContainer = document.createElement('div');
+  audioContainer.className = 'audio-container';
+  audioContainer.id = `audio-container-${userId}`;
+
+  const userLabel = document.createElement('div');
+  userLabel.className = 'video-user-label';
+  userLabel.textContent = userId === username ? 'You' : userId;
+
+  const audioIcon = document.createElement('div');
+  audioIcon.className = 'audio-icon';
+  audioIcon.innerHTML = '<i class="fas fa-microphone"></i>';
+
+  audioContainer.appendChild(audioIcon);
+  audioContainer.appendChild(userLabel);
+  videoGrid.appendChild(audioContainer);
+}
+
+// ======================
 // Call UI Functions
 // ======================
 
@@ -309,73 +381,6 @@ function showCallEndedUI(msg) {
   `;
   document.body.appendChild(div);
   document.getElementById('close-alert-btn').onclick = () => div.remove();
-}
-
-// ======================
-// Video/Audio Elements
-// ======================
-
-function addVideoElement(type, userId, stream, isLocal = false) {
-  const videoGrid = document.getElementById('video-grid');
-  if (!videoGrid) {
-    console.error('Video grid not found!');
-    return null;
-  }
-
-  const existing = document.getElementById(`${type}-container-${userId}`);
-  if (existing) existing.remove();
-
-  const container = document.createElement('div');
-  container.className = `video-container ${isLocal ? 'local-video-container' : ''}`;
-  container.id = `${type}-container-${userId}`;
-
-  const video = document.createElement('video');
-  video.id = `${type}-video-${userId}`;
-  video.autoplay = true;
-  video.playsInline = true;
-  video.muted = isLocal;
-  
-  if (isLocal && currentCallType === 'video') {
-    video.style.transform = 'scaleX(-1)';
-  }
-
-  const label = document.createElement('div');
-  label.className = 'video-user-label';
-  label.textContent = userId === username ? 'You' : userId;
-
-  container.appendChild(video);
-  container.appendChild(label);
-  videoGrid.appendChild(container);
-
-  video.srcObject = stream;
-  
-  video.onloadedmetadata = () => {
-    video.play().catch(e => console.error('Video play failed:', e));
-  };
-
-  console.log(`Created ${type} video element for ${userId}`);
-  return video;
-}
-
-function addAudioElement(userId) {
-  const videoGrid = document.getElementById('video-grid');
-  if (!videoGrid) return;
-
-  const audioContainer = document.createElement('div');
-  audioContainer.className = 'audio-container';
-  audioContainer.id = `audio-container-${userId}`;
-
-  const userLabel = document.createElement('div');
-  userLabel.className = 'video-user-label';
-  userLabel.textContent = userId === username ? 'You' : userId;
-
-  const audioIcon = document.createElement('div');
-  audioIcon.className = 'audio-icon';
-  audioIcon.innerHTML = '<i class="fas fa-microphone"></i>';
-
-  audioContainer.appendChild(audioIcon);
-  audioContainer.appendChild(userLabel);
-  videoGrid.appendChild(audioContainer);
 }
 
 // ======================
@@ -471,10 +476,6 @@ async function establishPeerConnection(userId, isInitiator = false) {
     if (peerConnection.iceConnectionState === 'failed') {
       peerConnection.restartIce();
     }
-  };
-
-  peerConnection.onsignalingstatechange = () => {
-    console.log(`Signaling state with ${userId}: ${peerConnection.signalingState}`);
   };
 
   peerConnection.onconnectionstatechange = () => {
@@ -735,23 +736,23 @@ socket.on('stopTyping', () => {
 
 socket.on('incoming-call', handleIncomingCall);
 
-socket.on('call-initiate', ({ callType, callId, caller }) => {
-  console.log(`Call initiated by ${caller}, type: ${callType}`);
-  if (callId === currentCallId) return;
-  
-  if (isCallActive) {
-    socket.emit('reject-call', { room, callId, reason: 'busy' });
-    return;
-  }
-  
-  handleIncomingCall({ callType, callId, caller });
-});
-
-socket.on('accept-call', async ({ userId, callId }) => {
+socket.on('call-accepted', async ({ callId, userId }) => {
   console.log(`Call accepted by ${userId}`);
   if (callId !== currentCallId || !isCallActive) return;
   
   await establishPeerConnection(userId, true);
+});
+
+socket.on('call-participants', ({ participants, callId }) => {
+  console.log(`Call participants: ${participants.join(', ')}`);
+  if (callId !== currentCallId || !isCallActive) return;
+  
+  participants.forEach(async userId => {
+    if (userId !== username && !peerConnections[userId]) {
+      console.log(`Establishing connection with existing participant ${userId}`);
+      await establishPeerConnection(userId, true);
+    }
+  });
 });
 
 socket.on('offer', async ({ offer, userId, callId }) => {
@@ -836,18 +837,6 @@ socket.on('ice-candidate', async ({ candidate, userId, callId }) => {
   }
 });
 
-socket.on('call-participants', ({ participants, callId }) => {
-  console.log(`Call participants: ${participants.join(', ')}`);
-  if (callId !== currentCallId || !isCallActive) return;
-  
-  participants.forEach(async userId => {
-    if (userId !== username && !peerConnections[userId]) {
-      console.log(`Establishing connection with existing participant ${userId}`);
-      await establishPeerConnection(userId, true);
-    }
-  });
-});
-
 socket.on('user-joined-call', ({ userId }) => {
   console.log(`${userId} joined the call`);
   if (!isCallActive || userId === username) return;
@@ -859,13 +848,13 @@ socket.on('user-left-call', ({ userId }) => {
   removePeerConnection(userId);
 });
 
-socket.on('end-call', () => {
+socket.on('call-ended', () => {
   console.log('Call ended by remote peer');
   endCall();
   showCallEndedUI('Call ended');
 });
 
-socket.on('reject-call', ({ reason }) => {
+socket.on('call-rejected', ({ reason }) => {
   console.log(`Call rejected: ${reason}`);
   endCall();
   showCallEndedUI(reason === 'busy' ? 'User is busy' : 'Call rejected');
