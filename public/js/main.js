@@ -1,4 +1,4 @@
-// ✅ FIXED VIDEO/AUDIO CHAT IMPLEMENTATION
+// ✅ COMPLETE WORKING VIDEO CHAT IMPLEMENTATION
 window.addEventListener('DOMContentLoaded', () => {
   const socket = io('https://chat-app-a3m9.onrender.com', {
     transports: ['websocket'],
@@ -80,6 +80,79 @@ window.addEventListener('DOMContentLoaded', () => {
   };
 
   muteBtn.innerHTML = isMuted ? '<i class="fas fa-bell-slash"></i>' : '<i class="fas fa-bell"></i>';
+
+  // ======================
+  // Chat Functions
+  // ======================
+
+  function addMessage(msg) {
+    document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
+
+    const el = document.createElement('div');
+    const isMe = msg.username === username;
+    const isSystem = msg.username === 'ChatApp Bot';
+    el.id = msg.id;
+    el.className = `message ${isMe ? 'you' : 'other'}${isSystem ? ' system' : ''}`;
+
+    let html = '';
+    if (msg.replyTo) {
+      html += `<div class="message-reply"><span class="reply-sender">${msg.replyTo.username}</span><span class="reply-text">${msg.replyTo.text}</span></div>`;
+    }
+    html += `<div class="meta">${isMe ? '<span class="prompt-sign">></span>' : ''}<strong>${msg.username}</strong><span class="message-time">${msg.time}</span></div><div class="text">${msg.text}</div>`;
+    if (isMe) {
+      const seen = msg.seenBy || [];
+      const seenIcon = seen.length > 1 ? '✓✓' : '✓';
+      const seenNames = seen.map(u => u === username ? 'You' : u).join(', ');
+      html += `<div class="message-status"><span class="seen-icon">${seenIcon}</span>${seenNames ? `<span class="seen-users">${seenNames}</span>` : ''}</div>`;
+    }
+
+    el.innerHTML = html;
+    if (!isSystem) {
+      el.onclick = () => {
+        const user = el.querySelector('.meta strong')?.textContent;
+        const text = el.querySelector('.text')?.textContent;
+        if (user && text) setupReply(user, el.id, text);
+      };
+    }
+
+    chatMessages.appendChild(el);
+    setTimeout(() => chatMessages.scrollTo({ top: chatMessages.scrollHeight, behavior: 'smooth' }), 20);
+  }
+
+  function setupReply(user, msgID, text) {
+    replyTo = { id: msgID, username: user, text };
+    replyUserElem.textContent = user;
+    replyTextElem.textContent = text.length > 30 ? text.substr(0, 30) + '...' : text;
+    replyPreview.classList.remove('d-none');
+    msgInput.focus();
+  }
+
+  cancelReplyBtn.onclick = e => {
+    e.stopPropagation();
+    replyTo = null;
+    replyPreview.classList.add('d-none');
+  };
+
+  // Typing Indicators
+  msgInput.oninput = () => {
+    const now = Date.now();
+    if (now - lastTypingUpdate > 1000) {
+      socket.emit('typing', { room });
+      lastTypingUpdate = now;
+    }
+    clearTimeout(window._stopTyping);
+    window._stopTyping = setTimeout(() => socket.emit('stopTyping', { room }), 2000);
+  };
+
+  function showTypingIndicator(user) {
+    if (!document.querySelector('.typing-indicator')) {
+      const d = document.createElement('div');
+      d.className = 'typing-indicator other';
+      d.innerHTML = `<div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div><span class="typing-text">${user} is typing...</span>`;
+      chatMessages.appendChild(d);
+      chatMessages.scrollTo({ top: chatMessages.scrollHeight, behavior: 'smooth' });
+    }
+  }
 
   // ======================
   // Call UI Functions
@@ -557,6 +630,14 @@ window.addEventListener('DOMContentLoaded', () => {
   socket.on('message', msg => {
     if (msg.username !== username && !isMuted) notificationSound.play().catch(() => { });
     addMessage(msg);
+  });
+
+  socket.on('typing', ({ username: u }) => {
+    u !== username && showTypingIndicator(u);
+  });
+
+  socket.on('stopTyping', () => {
+    document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
   });
 
   socket.on('incoming-call', handleIncomingCall);
