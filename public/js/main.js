@@ -753,16 +753,16 @@ socket.on('call-accepted', async ({ callId, userId }) => {
 });
 
 socket.on('call-participants', ({ participants, callId }) => {
+  console.log(`Call participants: ${participants.join(', ')}`);
   if (callId !== currentCallId || !isCallActive) return;
-
+  
   participants.forEach(async userId => {
     if (userId !== username && !peerConnections[userId]) {
-      console.log(`Caller connecting to ${userId}`);
+      console.log(`Establishing connection with existing participant ${userId}`);
       await establishPeerConnection(userId, true);
     }
   });
 });
-
 
 socket.on('offer', async ({ offer, userId, callId }) => {
   console.log(`Offer received from ${userId}`);
