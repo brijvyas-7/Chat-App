@@ -685,44 +685,38 @@ async function startCall(callType) {
   }
 }
 
-async function handleIncomingCall({ callType, callId, caller }) {
-  if (isCallActive) {
-    socket.emit('reject-call', { room, callId, reason: 'busy' });
-    return;
-  }
+function handleIncomingCall({ caller, room, callId }) {
+  if (isCallActive || confirm(`Incoming video call from ${caller}. Accept?`)) {
+    isCallActive = true;
+    currentCallId = callId;
+    showCallUI();
 
-  const accept = confirm(`${caller} is ${callType === 'audio' ? 'audio' : 'video'} calling. Accept?`);
-  if (!accept) {
-    socket.emit('reject-call', { room, callId });
-    return;
-  }
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
+      localStream = stream;
+      localVideo.srcObject = stream;
+      socket.emit('accept-call', { room, callId });
+      socket.emit('get-call-participants', { room, callId }); // Ask server who else is in call
 
-  isCallActive = true;
-  currentCallType = callType;
-  currentCallId = callId;
-  iceQueues[callId] = {};
+      // 🔄 Handle other participants on receiver side
+      socket.once('call-participants', ({ participants, callId: cid }) => {
+        if (cid !== currentCallId || !isCallActive) return;
 
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: callType === 'video' ? { facingMode: 'user' } : false
+        participants.forEach(async userId => {
+          if (userId !== username && !peerConnections[userId]) {
+            console.log(`Receiver connecting to ${userId}`);
+            await establishPeerConnection(userId);
+          }
+        });
+      });
+    }).catch(err => {
+      console.error('Media access error on receiver side:', err);
+      endCall();
     });
-    
-    console.log('Obtained media stream with tracks:', 
-      `Audio: ${stream.getAudioTracks().length}, ` +
-      `Video: ${stream.getVideoTracks().length}`);
-
-    localStream = stream;
-    showCallUI(callType);
-    socket.emit('accept-call', { room, callId });
-    socket.emit('get-call-participants', { room, callId });
-
-  } catch (err) {
-    console.error('Call setup failed:', err);
-    alert(`Failed to start call: ${err.message}`);
-    endCall();
+  } else {
+    socket.emit('reject-call', { room, callId });
   }
 }
+
 
 // ======================
 // Socket Event Handlers
@@ -759,16 +753,16 @@ socket.on('call-accepted', async ({ callId, userId }) => {
 });
 
 socket.on('call-participants', ({ participants, callId }) => {
-  console.log(`Call participants: ${participants.join(', ')}`);
   if (callId !== currentCallId || !isCallActive) return;
-  
+
   participants.forEach(async userId => {
     if (userId !== username && !peerConnections[userId]) {
-      console.log(`Establishing connection with existing participant ${userId}`);
+      console.log(`Caller connecting to ${userId}`);
       await establishPeerConnection(userId, true);
     }
   });
 });
+
 
 socket.on('offer', async ({ offer, userId, callId }) => {
   console.log(`Offer received from ${userId}`);
