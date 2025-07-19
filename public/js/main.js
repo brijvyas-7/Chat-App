@@ -428,14 +428,19 @@ function addVideoElement(type, userId, stream, isLocal = false) {
   container.appendChild(label);
   videoGrid.appendChild(container);
 
-  // Attach the stream
   video.srcObject = stream;
   
-  video.onloadedmetadata = () => {
+  // Ensure video plays
+  const playVideo = () => {
     video.play().catch(e => console.error('Video play failed:', e));
   };
+  
+  if (video.readyState >= 3) { // HAVE_FUTURE_DATA
+    playVideo();
+  } else {
+    video.onloadedmetadata = playVideo;
+  }
 
-  console.log(`Created ${type} video element for ${userId}`);
   return video;
 }
 
@@ -645,23 +650,36 @@ async function establishPeerConnection(userId, isInitiator = false) {
   peerConnections[userId] = peerConnection;
 
   // Debugging handlers
-  peerConnection.oniceconnectionstatechange = () => {
-    console.log(`ICE connection state with ${userId}: ${peerConnection.iceConnectionState}`);
-    if (peerConnection.iceConnectionState === 'failed') {
-      peerConnection.restartIce();
-    }
-  };
+peerConnection.oniceconnectionstatechange = () => {
+  console.log(`ICE connection state with ${userId}: ${peerConnection.iceConnectionState}`);
+  if (peerConnection.iceConnectionState === 'failed') {
+    peerConnection.restartIce();
+  }
+  
+  // Add visual feedback
+  const container = document.getElementById(`remote-container-${userId}`);
+  if (container) {
+    container.style.border = 
+      peerConnection.iceConnectionState === 'connected' ? '3px solid green' :
+      peerConnection.iceConnectionState === 'disconnected' ? '3px solid yellow' :
+      peerConnection.iceConnectionState === 'failed' ? '3px solid red' : '';
+  }
+};
 
   peerConnection.onsignalingstatechange = () => {
     console.log(`Signaling state with ${userId}: ${peerConnection.signalingState}`);
   };
 
-  peerConnection.onconnectionstatechange = () => {
-    console.log(`Connection state with ${userId}: ${peerConnection.connectionState}`);
-    if (['disconnected', 'failed'].includes(peerConnection.connectionState)) {
-      removePeerConnection(userId);
-    }
-  };
+ peerConnection.onconnectionstatechange = () => {
+  console.log(`Connection state with ${userId}: ${peerConnection.connectionState}`);
+  if (peerConnection.connectionState === 'connected') {
+    console.log(`Successfully connected to ${userId}`);
+  }
+  if (['disconnected', 'failed'].includes(peerConnection.connectionState)) {
+    console.log(`Connection with ${userId} failed, cleaning up`);
+    removePeerConnection(userId);
+  }
+};
 
   // Add local tracks if we have them
   if (localStream) {
@@ -672,42 +690,43 @@ async function establishPeerConnection(userId, isInitiator = false) {
   }
 
   // Enhanced remote stream handling
-  peerConnection.ontrack = (e) => {
-    console.log('Remote track received:', e.streams);
+ peerConnection.ontrack = (e) => {
+  console.log('Remote track received:', e.streams, e.track.kind);
+  
+  if (!e.streams || e.streams.length === 0) {
+    console.warn('No streams in track event, adding track to new stream');
+    const newStream = new MediaStream();
+    newStream.addTrack(e.track);
+    remoteStreams[userId] = newStream;
     
-    if (!e.streams || e.streams.length === 0) {
-      console.warn('No streams in track event');
-      return;
-    }
-
-    const stream = e.streams[0];
-    remoteStreams[userId] = stream;
-
     if (currentCallType === 'video') {
-      // Check if video element exists
-      let videoElem = document.getElementById(`remote-video-${userId}`);
-      
-      if (!videoElem) {
-        videoElem = addVideoElement('remote', userId, stream);
-      } else {
-        // Update existing video element
-        videoElem.srcObject = stream;
-      }
-      
-      // Ensure video plays
-      const playVideo = () => {
-        videoElem.play().catch(e => console.error('Video play error:', e));
-      };
-      
-      videoElem.onloadedmetadata = playVideo;
-      playVideo();
+      addVideoElement('remote', userId, newStream);
     } else {
-      // For audio calls
-      if (!document.getElementById(`audio-container-${userId}`)) {
-        addAudioElement(userId);
-      }
+      addAudioElement(userId);
     }
-  };
+    return;
+  }
+
+  const stream = e.streams[0];
+  remoteStreams[userId] = stream;
+
+  if (currentCallType === 'video') {
+    let videoElem = document.getElementById(`remote-video-${userId}`);
+    if (!videoElem) {
+      videoElem = addVideoElement('remote', userId, stream);
+    } else {
+      videoElem.srcObject = stream;
+    }
+    
+    videoElem.onloadedmetadata = () => {
+      videoElem.play().catch(e => console.error('Video play error:', e));
+    };
+  } else {
+    if (!document.getElementById(`audio-container-${userId}`)) {
+      addAudioElement(userId);
+    }
+  }
+};
 
   // ICE Candidate handling
   peerConnection.onicecandidate = (e) => {
