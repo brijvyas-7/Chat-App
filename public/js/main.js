@@ -1,7 +1,14 @@
 // ✅ COMPLETE WORKING VIDEO CHAT IMPLEMENTATION (FIXED VERSION)
 window.addEventListener('DOMContentLoaded', () => {
 
-const socket = io({ reconnection: true, reconnectionAttempts: 5, reconnectionDelay: 1000 });
+const socket = io('https://chat-app-a3m9.onrender.com', {
+  transports: ['websocket'],  // Force WebSocket only
+  upgrade: false,             // Disable fallback to polling
+  reconnection: true,
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000
+});
+
 
 // DOM Elements
 const msgInput = document.getElementById('msg');
