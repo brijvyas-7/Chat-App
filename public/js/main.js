@@ -1,3 +1,6 @@
+document.addEventListener('DOMContentLoaded', () => {
+  // all your existing JS code here
+
 // main.js (Fixed version)
 
 const socket = io({ reconnection: true, reconnectionAttempts: 5, reconnectionDelay: 1000 });
@@ -266,4 +269,5 @@ socket.on('end-call', () => {
 
 socket.on('connect', () => {
   console.log("Connected to server");
+});
 });
