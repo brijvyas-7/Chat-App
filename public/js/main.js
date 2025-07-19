@@ -1,3 +1,5 @@
+// main.js (Fixed version)
+
 const socket = io({ reconnection: true, reconnectionAttempts: 5, reconnectionDelay: 1000 });
 
 const msgInput = document.getElementById('msg');
@@ -44,9 +46,6 @@ function appendMessage(user, text, isOwn, reply = null, seen = false) {
   msg.appendChild(meta);
 
   msg.addEventListener('click', () => setReply(user, text));
-  msg.addEventListener('touchstart', handleSwipeStart);
-  msg.addEventListener('touchend', handleSwipeEnd);
-
   chatMessages.appendChild(msg);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
@@ -67,7 +66,7 @@ function sendMessage(e) {
   e.preventDefault();
   const msg = msgInput.value;
   if (!msg.trim()) return;
-  socket.emit('chatMessage', { text: msg, reply: replyTo });
+  socket.emit('chatMessage', { text: msg, reply: replyTo, room });
   appendMessage(username, msg, true, replyTo, true);
   msgInput.value = '';
   clearReply();
@@ -120,12 +119,12 @@ async function establishPeerConnection(remoteUser, isCaller = false) {
 
   localStream.getTracks().forEach(track => {
     peerConnection.addTrack(track, localStream);
-    console.log(`Added local ${track.kind} track`);
   });
 
   peerConnection.onicecandidate = event => {
     if (event.candidate) {
       socket.emit('ice-candidate', {
+        from: username,
         to: remoteUser,
         candidate: event.candidate,
         callId: currentCallId
@@ -145,11 +144,15 @@ async function establishPeerConnection(remoteUser, isCaller = false) {
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
     socket.emit('offer', {
+      from: username,
       to: remoteUser,
       offer,
-      callId: currentCallId
+      callId: currentCallId,
+      room
     });
   }
+
+  return peerConnection;
 }
 
 function handleIncomingCall({ caller, room, callId }) {
@@ -163,17 +166,8 @@ function handleIncomingCall({ caller, room, callId }) {
       localVideo.srcObject = stream;
       socket.emit('accept-call', { room, callId });
       socket.emit('get-call-participants', { room, callId });
-
-      socket.once('call-participants', ({ participants, callId: cid }) => {
-        if (cid !== currentCallId || !isCallActive) return;
-        participants.forEach(async userId => {
-          if (userId !== username && !peerConnections[userId]) {
-            await establishPeerConnection(userId);
-          }
-        });
-      });
     }).catch(err => {
-      console.error('Media access error on receiver side:', err);
+      console.error('Media access error:', err);
       endCall();
     });
   } else {
@@ -192,12 +186,12 @@ function endCall() {
   }
   localVideo.srcObject = null;
   remoteVideosContainer.innerHTML = '';
-  socket.emit('end-call', { room });
+  socket.emit('end-call', { room, callId: currentCallId });
 }
 
 msgInput.addEventListener('input', () => {
   if (!isTyping) {
-    socket.emit('typing', username);
+    socket.emit('typing', { room });
     isTyping = true;
     setTimeout(() => (isTyping = false), 1000);
   }
@@ -207,6 +201,7 @@ document.getElementById('chat-form').addEventListener('submit', sendMessage);
 document.getElementById('cancel-reply').addEventListener('click', clearReply);
 muteToggle.addEventListener('click', toggleMute);
 darkModeToggle.addEventListener('click', toggleDarkMode);
+
 videoCallBtn.addEventListener('click', () => {
   if (isCallActive) return;
 
@@ -216,11 +211,12 @@ videoCallBtn.addEventListener('click', () => {
     isCallActive = true;
     currentCallId = Date.now().toString();
     showCallUI();
-    socket.emit('start-call', { room, callId: currentCallId });
+    socket.emit('call-initiate', { room, caller: username, callType: 'video' });
   }).catch(err => {
     console.error('Media access error:', err);
   });
 });
+
 document.getElementById('end-call').addEventListener('click', endCall);
 
 socket.emit('joinRoom', { username, room });
@@ -229,39 +225,35 @@ socket.on('message', ({ user, text, reply }) => {
   appendMessage(user, text, user === username, reply, user === username);
 });
 
-socket.on('typing', user => {
+socket.on('showTyping', ({ username: user }) => {
   if (user !== username) showTyping(user);
 });
 
-socket.on('start-call', handleIncomingCall);
+socket.on('incoming-call', handleIncomingCall);
 
-socket.on('accept-call', ({ user }) => {
-  console.log(`${user} joined the call`);
-});
-
-socket.on('call-participants', ({ participants, callId }) => {
+socket.on('call-participants', async ({ participants, callId }) => {
   if (callId !== currentCallId || !isCallActive) return;
-  participants.forEach(async userId => {
+  for (const userId of participants) {
     if (userId !== username && !peerConnections[userId]) {
       await establishPeerConnection(userId, true);
     }
-  });
+  }
 });
 
-socket.on('offer', async ({ from, offer }) => {
+socket.on('offer', async ({ userId: from, offer }) => {
   const pc = await establishPeerConnection(from);
   await pc.setRemoteDescription(new RTCSessionDescription(offer));
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
-  socket.emit('answer', { to: from, answer, callId: currentCallId });
+  socket.emit('answer', { to: from, answer, callId: currentCallId, room });
 });
 
-socket.on('answer', async ({ from, answer }) => {
+socket.on('answer', async ({ userId: from, answer }) => {
   const pc = peerConnections[from];
   if (pc) await pc.setRemoteDescription(new RTCSessionDescription(answer));
 });
 
-socket.on('ice-candidate', ({ from, candidate }) => {
+socket.on('ice-candidate', ({ userId: from, candidate }) => {
   const pc = peerConnections[from];
   if (pc && candidate) {
     pc.addIceCandidate(new RTCIceCandidate(candidate));
