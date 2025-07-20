@@ -154,7 +154,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
       el.innerHTML = html;
       elements.chatMessages.appendChild(el);
-      
+
       setTimeout(() => {
         elements.chatMessages.scrollTo({ top: elements.chatMessages.scrollHeight, behavior: 'smooth' });
       }, 20);
@@ -183,7 +183,7 @@ window.addEventListener('DOMContentLoaded', () => {
         </div>
         <span class="typing-text">${u} is typing...</span>
       `;
-      
+
       // Add after last message
       const messages = elements.chatMessages.querySelectorAll('.message');
       if (messages.length > 0) {
@@ -191,7 +191,7 @@ window.addEventListener('DOMContentLoaded', () => {
       } else {
         elements.chatMessages.appendChild(d);
       }
-      
+
       elements.chatMessages.scrollTo({ top: elements.chatMessages.scrollHeight, behavior: 'smooth' });
     },
 
@@ -350,8 +350,9 @@ window.addEventListener('DOMContentLoaded', () => {
       debug.log(`Establishing connection with ${userId}, initiator: ${isInitiator}`);
       if (state.peerConnections[userId]) {
         debug.log(`Peer connection already exists for ${userId}`);
-        return;
+        return state.peerConnections[userId];
       }
+
 
       const pc = webrtc.createPeerConnection(userId);
       if (!pc) return;
@@ -387,7 +388,7 @@ window.addEventListener('DOMContentLoaded', () => {
           state.makingOffer = true;
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
-          
+
           socket.emit('offer', {
             offer: pc.localDescription,
             room,
@@ -400,6 +401,7 @@ window.addEventListener('DOMContentLoaded', () => {
           state.makingOffer = false;
         }
       }
+      return pc;
     },
 
     addVideoElement: (type, userId, stream, isLocal = false) => {
@@ -613,7 +615,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
         debug.log('Local stream tracks:', state.localStream.getTracks());
         callManager.showCallUI(t);
-        
+
         socket.emit('call-initiate', {
           room,
           callId: state.currentCallId,
@@ -684,10 +686,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
     endCall: () => {
       if (!state.isCallActive) return;
-      
+
       debug.log('Ending call and cleaning up resources');
       clearTimeout(state.callTimeout);
-      
+
       // Clean up peer connections
       Object.keys(state.peerConnections).forEach(userId => {
         const pc = state.peerConnections[userId];
@@ -699,7 +701,7 @@ window.addEventListener('DOMContentLoaded', () => {
         }
         webrtc.removePeerConnection(userId);
       });
-      
+
       // Clean up local stream
       if (state.localStream) {
         state.localStream.getTracks().forEach(track => track.stop());
@@ -710,7 +712,7 @@ window.addEventListener('DOMContentLoaded', () => {
       state.currentCallId = null;
       state.currentCallType = null;
       callManager.hideCallUI();
-      
+
       // Notify server only if we're the ones ending the call
       if (state.currentCallId) {
         socket.emit('end-call', { room, callId: state.currentCallId });
@@ -832,16 +834,16 @@ window.addEventListener('DOMContentLoaded', () => {
       if (state.swipeState.active) {
         state.swipeState.active = false;
         const deltaX = state.swipeState.currentX - state.swipeState.startX;
-        
+
         state.swipeState.target.style.transition = 'transform 0.3s ease';
         state.swipeState.target.style.transform = '';
-        
+
         if (Math.abs(deltaX) > state.SWIPE_THRESHOLD) {
           const u = state.swipeState.target.querySelector('.meta strong').textContent;
           const t = state.swipeState.target.querySelector('.text').textContent;
           const id = state.swipeState.target.id;
           messageHandler.setupReply(u, id, t);
-          
+
           // Add visual feedback
           const feedback = document.createElement('div');
           feedback.className = 'swipe-feedback';
@@ -863,8 +865,8 @@ window.addEventListener('DOMContentLoaded', () => {
       if (!txt) return;
 
       debug.log('Sending message:', txt);
-      socket.emit('chatMessage', { 
-        text: txt, 
+      socket.emit('chatMessage', {
+        text: txt,
         replyTo: state.replyTo ? {
           id: state.replyTo.id,
           username: state.replyTo.username,
@@ -977,11 +979,11 @@ window.addEventListener('DOMContentLoaded', () => {
       if (callId !== state.currentCallId || !state.isCallActive) return;
 
       const pc = state.peerConnections[userId] || await webrtc.establishPeerConnection(userId);
-      
+
       try {
-        const offerCollision = (offer.type === 'offer') && 
+        const offerCollision = (offer.type === 'offer') &&
           (state.makingOffer || pc.signalingState !== 'stable');
-        
+
         state.ignoreOffer = !state.isCallActive && offerCollision;
         if (state.ignoreOffer) return;
 
@@ -1015,7 +1017,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     socket.on('ice-candidate', async ({ candidate, userId, callId }) => {
       debug.log(`Received ICE candidate from ${userId}`);
-      
+
       try {
         const pc = state.peerConnections[userId];
         if (pc) {
