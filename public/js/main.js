@@ -668,7 +668,7 @@ window.addEventListener('DOMContentLoaded', () => {
         });
 
         callManager.showCallUI(callType);
-        socket.emit('accept-call', { room, callId });
+        socket.emit('call-accepted', { room, callId });
         socket.emit('get-call-participants', { room, callId });
 
         state.callTimeout = setTimeout(() => {
@@ -1047,8 +1047,8 @@ window.addEventListener('DOMContentLoaded', () => {
       });
     });
 
-    socket.on('accept-call', async ({ userId, callId }) => {
-      debug.log(`✅ accept-call from ${userId}`);
+    socket.on('call-accepted', async ({ userId, callId }) => {
+      debug.log(`✅ call-accepted from ${userId}`);
       if (callId !== state.currentCallId || !state.isCallActive) return;
       // CORRECT: caller now initiates the WebRTC handshake
       await webrtc.establishPeerConnection(userId, true);

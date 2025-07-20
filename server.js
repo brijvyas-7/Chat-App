@@ -93,7 +93,7 @@ io.on('connection', (socket) => {
   });
 
   // Call acceptance - FIXED: Better participant tracking
-  socket.on('accept-call', ({ room, callId }) => {
+  socket.on('call-accepted', ({ room, callId }) => {
     const call = activeCalls[room]?.[callId];
     if (!call) {
       console.error(`Call ${callId} not found in room ${room}`);
@@ -121,7 +121,7 @@ io.on('connection', (socket) => {
       s => getCurrentUser(s.id)?.username === call.participants[0]
     );
     if (callerSocket) {
-      callerSocket.emit('accept-call', { 
+      callerSocket.emit('call-accepted', { 
         callId,
         userId: user.username 
       });
