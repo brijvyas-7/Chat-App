@@ -1,1173 +1,343 @@
+const path = require('path');
+const http = require('http');
+const express = require('express');
+const socketio = require('socket.io');
+const { v4: uuidv4 } = require('uuid');
+const formatMessage = require('./utils/messages');
+const { userJoin, getCurrentUser, userLeave, getRoomUsers } = require('./utils/users');
 
-// Complete Chat Application with Video Calling (Fixed Version)
-window.addEventListener('DOMContentLoaded', () => {
-  // State Management
-  const state = {
-    hasJoined: false,
-    replyTo: null,
-    isMuted: localStorage.getItem('isMuted') === 'true',
-    peerConnections: {},
-    localStream: null,
-    remoteStreams: {},
-    currentCallId: null,
-    callTimeout: null,
-    isCallActive: false,
-    iceQueues: {},
-    isAudioMuted: false,
-    isVideoOff: false,
-    currentCallType: null,
-    currentFacingMode: 'user',
-    lastTypingUpdate: 0,
-    SWIPE_THRESHOLD: 60,
-    MAX_RECONNECT_ATTEMPTS: 5,
-    reconnectAttempts: 0,
-    makingOffer: false,
-    ignoreOffer: false,
-    typingTimeout: null,
-    debugMode: true,
-    swipeState: {
-      active: false,
-      startX: 0,
-      currentX: 0,
-      target: null
+const app = express();
+const server = http.createServer(app);
+const io = socketio(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  },
+  // Improved WebSocket configuration
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  transports: ['websocket', 'polling']
+});
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+const botName = 'ChatApp Bot';
+const activeCalls = {};
+
+// Utility function to find user socket
+const findUserSocket = (username) => {
+  return Object.values(io.sockets.sockets).find(
+    s => getCurrentUser(s.id)?.username === username
+  );
+};
+
+io.on('connection', (socket) => {
+  console.log(`New connection: ${socket.id}`);
+
+  // Enhanced room joining with validation
+  socket.on('joinRoom', ({ username, room }) => {
+    if (!username || !room) {
+      console.error('Invalid joinRoom data:', { username, room });
+      socket.emit('error', 'Username and room are required');
+      return;
     }
-  };
 
-  // DOM Elements
-  const elements = {
-    msgInput: document.getElementById('msg'),
-    chatMessages: document.getElementById('chat-messages'),
-    replyPreview: document.getElementById('reply-preview'),
-    replyUser: document.getElementById('reply-user'),
-    replyText: document.getElementById('reply-text'),
-    cancelReplyBtn: document.getElementById('cancel-reply'),
-    themeBtn: document.getElementById('theme-toggle'),
-    muteBtn: document.getElementById('mute-toggle'),
-    roomName: document.getElementById('room-name'),
-    videoCallBtn: document.getElementById('video-call-btn'),
-    audioCallBtn: document.getElementById('audio-call-btn'),
-    videoCallContainer: document.getElementById('video-call-container'),
-    connectionStatus: document.getElementById('connection-status'),
-    chatForm: document.getElementById('chat-form')
-  };
+    const user = userJoin(socket.id, username, room);
+    socket.join(user.room);
 
-  // Debug Logger
-  const debug = {
-    log: (...args) => state.debugMode && console.log('[DEBUG]', ...args),
-    error: (...args) => state.debugMode && console.error('[DEBUG]', ...args),
-    warn: (...args) => state.debugMode && console.warn('[DEBUG]', ...args)
-  };
+    console.log(`🔗 ${username} joined room ${room} (socket ${socket.id})`);
+    
+    // Welcome current user
+    socket.emit('message', formatMessage(botName, 'Welcome to ChatApp!'));
 
-  // Media Elements
-  const media = {
-    notificationSound: new Audio('/sounds/notification.mp3'),
-    callSound: new Audio('/sounds/call.mp3')
-  };
+    // Broadcast when a user connects
+    socket.broadcast.to(user.room).emit('message', 
+      formatMessage(botName, `${user.username} has joined the chat`));
 
-  // Query Parameters
-  const { username, room } = Qs.parse(location.search, { ignoreQueryPrefix: true });
-
-  // Initialize Socket.IO
-  const socket = io({
-    reconnection: true,
-    reconnectionAttempts: state.MAX_RECONNECT_ATTEMPTS,
-    reconnectionDelay: 1000,
-    reconnectionDelayMax: 5000,
-    randomizationFactor: 0.5,
-    timeout: 20000,
-    transports: ['websocket', 'polling'] // Added for better mobile support
+    // Send users and room info
+    io.to(user.room).emit('roomUsers', {
+      room: user.room,
+      users: getRoomUsers(user.room)
+    });
   });
 
-  // Utility Functions
-  const utils = {
-    generateId: () => crypto.randomUUID(),
-
-    initDarkMode: () => {
-      const dark = localStorage.getItem('darkMode') === 'true';
-      document.body.classList.toggle('dark', dark);
-      elements.chatMessages.classList.toggle('dark-bg', dark);
-    },
-
-    updateConnectionStatus: (status) => {
-      if (!elements.connectionStatus) return;
-      elements.connectionStatus.textContent = status.text;
-      elements.connectionStatus.className = `connection-status ${status.type}`;
-    },
-
-    playNotificationSound: () => {
-      if (document.hasUserInteraction) {
-        media.notificationSound.play().catch(e => debug.error('Notification sound error:', e));
-      } else {
-        window.pendingNotifications = window.pendingNotifications || [];
-        window.pendingNotifications.push(() => {
-          media.notificationSound.play().catch(e => debug.error('Notification sound error:', e));
-        });
-      }
-    },
-
-    getCurrentTime: () => {
-      const now = new Date();
-      let hours = now.getHours();
-      const minutes = now.getMinutes().toString().padStart(2, '0');
-      const ampm = hours >= 12 ? 'pm' : 'am';
-      hours = hours % 12;
-      hours = hours ? hours : 12;
-      return `${hours}:${minutes} ${ampm}`;
-    },
-
-    // New: Get media constraints based on call type
-    getMediaConstraints: (type) => {
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      return {
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          channelCount: 1
-        },
-        video: type === 'video' ? {
-          facingMode: state.currentFacingMode,
-          width: isMobile ? { ideal: 640, max: 1280 } : { ideal: 1280, max: 1920 },
-          height: isMobile ? { ideal: 480, max: 720 } : { ideal: 720, max: 1080 },
-          frameRate: { ideal: 24, max: 30 }
-        } : false
-      };
+  // Listen for chatMessage with validation
+  socket.on('chatMessage', ({ text, replyTo, room }) => {
+    const user = getCurrentUser(socket.id);
+    if (!user) {
+      socket.emit('error', 'You must join a room first');
+      return;
     }
-  };
 
-  // Message Handling
-  const messageHandler = {
-    addMessage: (msg) => {
-      debug.log('Adding message:', msg);
-      document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
+    const msg = formatMessage(user.username, text, replyTo);
+    io.to(room).emit('message', msg);
+  });
 
-      const el = document.createElement('div');
-      const isMe = msg.username === username;
-      const isSys = msg.username === 'ChatApp Bot';
+  /* ====================== */
+  /* Enhanced Call Handling */
+  /* ====================== */
 
-      el.id = isSys ? '' : msg.id;
-      el.className = `message ${isMe ? 'you' : 'other'}${isSys ? ' system' : ''}`;
-
-      let html = '';
-      if (msg.replyTo) {
-        html += `<div class="message-reply">
-              <span class="reply-sender">${msg.replyTo.username}</span>
-              <span class="reply-text">${msg.replyTo.text}</span>
-            </div>`;
-      }
-
-      html += `<div class="meta">
-            ${isMe ? '<span class="prompt-sign">></span>' : ''}
-            <strong>${msg.username}</strong>
-            <span class="message-time">${msg.time}</span>
-          </div>
-          <div class="text">${msg.text}</div>`;
-
-      if (isMe) {
-        const seen = msg.seenBy || [];
-        const icon = seen.length > 1 ? '✓✓' : '✓';
-        const names = seen.map(u => u === username ? 'You' : u).join(', ');
-        html += `<div class="message-status">
-              <span class="seen-icon">${icon}</span>
-              ${names ? `<span class="seen-users">${names}</span>` : ''}
-            </div>`;
-      }
-
-      el.innerHTML = html;
-      elements.chatMessages.appendChild(el);
-
-      setTimeout(() => {
-        elements.chatMessages.scrollTo({ top: elements.chatMessages.scrollHeight, behavior: 'smooth' });
-      }, 20);
-    },
-
-    setupReply: (u, id, t) => {
-      debug.log('Setting up reply to:', u, id, t);
-      state.replyTo = { id, username: u, text: t };
-      elements.replyUser.textContent = u;
-      elements.replyText.textContent = t.length > 30 ? t.substr(0, 30) + '...' : t;
-      elements.replyPreview.classList.remove('d-none');
-      elements.msgInput.focus();
-    },
-
-    showTypingIndicator: (u) => {
-      debug.log('Showing typing indicator for:', u);
-      document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
-
-      const d = document.createElement('div');
-      d.className = 'typing-indicator other';
-      d.innerHTML = `
-        <div class="dots">
-          <span class="dot"></span>
-          <span class="dot"></span>
-          <span class="dot"></span>
-        </div>
-        <span class="typing-text">${u} is typing...</span>
-      `;
-
-      // Add after last message
-      const messages = elements.chatMessages.querySelectorAll('.message');
-      if (messages.length > 0) {
-        elements.chatMessages.insertBefore(d, messages[messages.length - 1].nextSibling);
-      } else {
-        elements.chatMessages.appendChild(d);
-      }
-
-      elements.chatMessages.scrollTo({ top: elements.chatMessages.scrollHeight, behavior: 'smooth' });
-    },
-
-    handleTyping: () => {
-      const now = Date.now();
-      if (now - state.lastTypingUpdate > 1000) {
-        socket.emit('typing', { username, room });
-        state.lastTypingUpdate = now;
-      }
-
-      clearTimeout(state.typingTimeout);
-      state.typingTimeout = setTimeout(() => {
-        socket.emit('stopTyping', { username, room });
-      }, 2000);
+  // Call initiation with validation
+  socket.on('call-initiate', ({ room, callId, callType, caller }) => {
+    if (!room || !callId || !callType || !caller) {
+      console.error('Invalid call-initiate data:', { room, callId, callType, caller });
+      socket.emit('error', 'Missing required call parameters');
+      return;
     }
-  };
 
-  // WebRTC Functions (Fixed Version)
-  const webrtc = {
-    createPeerConnection: (userId) => {
-      debug.log(`Creating peer connection for ${userId}`);
-      try {
-        const pc = new RTCPeerConnection({
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' }
-            // Add your TURN server here if available
-          ],
-          iceTransportPolicy: 'all',
-          bundlePolicy: 'max-bundle',
-          rtcpMuxPolicy: 'require'
-        });
-
-        pc.onconnectionstatechange = () => {
-          debug.log(`${userId} connection state: ${pc.connectionState}`);
-          if (['disconnected', 'failed'].includes(pc.connectionState)) {
-            webrtc.removePeerConnection(userId);
-          }
-        };
-
-        pc.oniceconnectionstatechange = () => {
-          debug.log(`${userId} ICE state: ${pc.iceConnectionState}`);
-          if (pc.iceConnectionState === 'failed') {
-            debug.log('ICE connection failed, attempting restart...');
-            webrtc.restartIce(userId);
-          }
-        };
-
-        pc.onsignalingstatechange = () => {
-          debug.log(`${userId} signaling state: ${pc.signalingState}`);
-        };
-
-        pc.onicecandidate = (event) => {
-          if (event.candidate) {
-            debug.log(`Sending ICE candidate to ${userId}`);
-            socket.emit('ice-candidate', {
-              candidate: event.candidate,
-              room,
-              callId: state.currentCallId,
-              targetUser: userId
-            });
-          }
-        };
-
-        pc.ontrack = (event) => {
-          debug.log(`Track event from ${userId}`);
-          if (event.streams && event.streams.length > 0) {
-            const stream = event.streams[0];
-            state.remoteStreams[userId] = stream;
-            webrtc.attachRemoteStream(userId, stream);
-          }
-        };
-
-        pc.onnegotiationneeded = async () => {
-          if (state.makingOffer) return;
-          debug.log(`Negotiation needed for ${userId}`);
-          try {
-            state.makingOffer = true;
-            const offer = await pc.createOffer({
-              offerToReceiveAudio: true,
-              offerToReceiveVideo: state.currentCallType === 'video'
-            });
-            await pc.setLocalDescription(offer);
-            socket.emit('offer', {
-              offer: pc.localDescription,
-              room,
-              callId: state.currentCallId,
-              targetUser: userId
-            });
-          } catch (err) {
-            debug.error('Error during negotiation:', err);
-          } finally {
-            state.makingOffer = false;
-          }
-        };
-
-        return pc;
-      } catch (error) {
-        debug.error(`Failed to create peer connection:`, error);
-        return null;
-      }
-    },
-
-    restartIce: async (userId) => {
-      const pc = state.peerConnections[userId];
-      if (!pc) return;
-
-      try {
-        debug.log(`Restarting ICE for ${userId}`);
-        const offer = await pc.createOffer({ iceRestart: true });
-        await pc.setLocalDescription(offer);
-        socket.emit('offer', {
-          offer: pc.localDescription,
-          room,
-          callId: state.currentCallId,
-          targetUser: userId
-        });
-      } catch (err) {
-        debug.error('Error restarting ICE:', err);
-      }
-    },
-
-    attachRemoteStream: (userId, stream) => {
-      debug.log(`Attaching remote stream for ${userId}`);
-      if (!stream) return;
-
-      // Remove existing video element if it exists
-      const existing = document.getElementById(`remote-container-${userId}`);
-      if (existing) existing.remove();
-
-      const container = document.createElement('div');
-      container.className = 'video-container';
-      container.id = `remote-container-${userId}`;
-
-      const video = document.createElement('video');
-      video.id = `remote-video-${userId}`;
-      video.autoplay = true;
-      video.playsInline = true;
-
-      const label = document.createElement('div');
-      label.className = 'video-user-label';
-      label.textContent = userId;
-
-      container.appendChild(video);
-      container.appendChild(label);
-      document.getElementById('video-grid').appendChild(container);
-
-      video.srcObject = stream;
-      video.onloadedmetadata = () => {
-        video.play().catch(e => {
-          debug.error('Video play failed:', e);
-          webrtc.showVideoPlayButton(container, video);
-        });
-      };
-    },
-
-    establishPeerConnection: async (userId, isInitiator = false) => {
-      debug.log(`Establishing connection with ${userId}, initiator: ${isInitiator}`);
-      if (state.peerConnections[userId]) {
-        debug.log(`Peer connection already exists for ${userId}`);
-        return state.peerConnections[userId];
-      }
-
-      const pc = webrtc.createPeerConnection(userId);
-      if (!pc) return null;
-
-      state.peerConnections[userId] = pc;
-
-      // Add local tracks if available
-      if (state.localStream) {
-        debug.log('Adding local tracks to peer connection');
-        state.localStream.getTracks().forEach(track => {
-          try {
-            pc.addTrack(track, state.localStream);
-          } catch (err) {
-            debug.error('Error adding track:', err);
-          }
-        });
-      }
-
-      // Process any queued ICE candidates
-      const queue = (state.iceQueues[state.currentCallId] || {})[userId] || [];
-      debug.log(`Processing ${queue.length} queued ICE candidates`);
-      for (const candidate of queue) {
-        try {
-          await pc.addIceCandidate(candidate);
-        } catch (err) {
-          debug.error('Error adding ICE candidate:', err);
-        }
-      }
-      delete state.iceQueues[state.currentCallId]?.[userId];
-
-      if (isInitiator) {
-        try {
-          state.makingOffer = true;
-          const offer = await pc.createOffer({
-            offerToReceiveAudio: true,
-            offerToReceiveVideo: state.currentCallType === 'video'
-          });
-          await pc.setLocalDescription(offer);
-          socket.emit('offer', {
-            offer: pc.localDescription,
-            room,
-            callId: state.currentCallId,
-            targetUser: userId
-          });
-        } catch (err) {
-          debug.error('Error creating offer:', err);
-        } finally {
-          state.makingOffer = false;
-        }
-      }
-      return pc;
-    },
-
-    addVideoElement: (type, userId, stream, isLocal = false) => {
-      const g = document.getElementById('video-grid');
-      if (!g) return;
-
-      const existing = document.getElementById(`${type}-container-${userId}`);
-      if (existing) existing.remove();
-
-      const container = document.createElement('div');
-      container.className = `video-container ${isLocal ? 'local-video-container' : ''}`;
-      container.id = `${type}-container-${userId}`;
-
-      const video = document.createElement('video');
-      video.id = `${type}-video-${userId}`;
-      video.autoplay = true;
-      video.playsInline = true;
-      video.muted = isLocal;
-
-      // Mirror only front camera
-      if (isLocal) {
-        video.style.transform = state.currentFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
-      }
-
-      const label = document.createElement('div');
-      label.className = 'video-user-label';
-      label.textContent = userId === username ? 'You' : userId;
-
-      container.appendChild(video);
-      container.appendChild(label);
-      g.appendChild(container);
-
-      if (stream?.active) {
-        video.srcObject = stream;
-        video.onloadedmetadata = () => {
-          video.play().catch(e => {
-            debug.error('Video play failed:', e);
-            webrtc.showVideoPlayButton(container, video);
-          });
-        };
-      }
-    },
-
-    showVideoPlayButton: (container, video) => {
-      const existingBtn = container.querySelector('.video-play-btn');
-      if (existingBtn) return;
-
-      const playBtn = document.createElement('button');
-      playBtn.className = 'video-play-btn';
-      playBtn.innerHTML = '<i class="fas fa-play"></i>';
-      playBtn.onclick = () => {
-        video.play()
-          .then(() => playBtn.remove())
-          .catch(e => debug.error('Still cannot play:', e));
-      };
-      container.appendChild(playBtn);
-    },
-
-    removePeerConnection: (userId) => {
-      debug.log(`Removing peer connection for ${userId}`);
-      if (state.peerConnections[userId]) {
-        try {
-          const pc = state.peerConnections[userId];
-          pc.getSenders().forEach(sender => {
-            if (sender.track) sender.track.stop();
-          });
-          pc.close();
-        } catch (err) {
-          debug.error('Error closing peer connection:', err);
-        }
-        delete state.peerConnections[userId];
-      }
-
-      // Remove UI elements
-      const vc = document.getElementById(`remote-container-${userId}`);
-      if (vc) vc.remove();
-
-      const ac = document.getElementById(`audio-container-${userId}`);
-      if (ac) ac.remove();
-
-      delete state.remoteStreams[userId];
-    }
-  };
-
-  // Call Management (Fixed Version)
-  const callManager = {
-    showCallingUI: (t) => {
-      elements.videoCallContainer.innerHTML = `
-        <div class="calling-ui">
-          <div class="calling-spinner"></div>
-          <div class="calling-text">Calling ${t === 'audio' ? '(Audio)' : '(Video)'}...</div>
-          <button id="cancel-call-btn" class="btn btn-danger">
-            <i class="fas fa-phone-slash"></i> Cancel
-          </button>
-        </div>
-      `;
-      elements.videoCallContainer.classList.remove('d-none');
-      document.getElementById('cancel-call-btn').onclick = callManager.endCall;
-
-      media.callSound.loop = true;
-      media.callSound.play().catch(() => {
-        const soundBtn = document.createElement('button');
-        soundBtn.className = 'sound-permission-btn';
-        soundBtn.innerHTML = '<i class="fas fa-volume-up"></i> Click to enable call sounds';
-        soundBtn.onclick = () => {
-          media.callSound.play().then(() => soundBtn.remove()).catch(console.error);
-        };
-        elements.videoCallContainer.querySelector('.calling-ui').appendChild(soundBtn);
-      });
-    },
-
-    showCallUI: (t) => {
-      media.callSound.pause();
-      clearTimeout(state.callTimeout);
-
-      let controls = `
-        <button id="toggle-audio-btn" class="control-btn audio-btn">
-          <i class="fas fa-microphone${state.isAudioMuted ? '-slash' : ''}"></i>
-        </button>
-        <button id="end-call-btn" class="control-btn end-btn">
-          <i class="fas fa-phone-slash"></i>
-        </button>
-      `;
-
-      if (t === 'video') {
-        controls += `
-          <button id="toggle-video-btn" class="control-btn video-btn">
-            <i class="fas fa-video${state.isVideoOff ? '-slash' : ''}"></i>
-          </button>
-          <button id="flip-camera-btn" class="control-btn flip-btn">
-            <i class="fas fa-camera-retro"></i>
-          </button>
-        `;
-      }
-
-      elements.videoCallContainer.innerHTML = `
-        <div class="video-call-active">
-          <div id="video-grid" class="video-grid"></div>
-          <div class="video-controls">${controls}</div>
-        </div>
-      `;
-
-      elements.videoCallContainer.classList.remove('d-none');
-      document.getElementById('toggle-audio-btn').onclick = callManager.toggleAudio;
-      document.getElementById('end-call-btn').onclick = callManager.endCall;
-
-      if (t === 'video') {
-        document.getElementById('toggle-video-btn').onclick = callManager.toggleVideo;
-        document.getElementById('flip-camera-btn').onclick = callManager.flipCamera;
-        webrtc.addVideoElement('local', username, state.localStream, true);
-      }
-    },
-
-    hideCallUI: () => {
-      elements.videoCallContainer.classList.add('d-none');
-      media.callSound.pause();
-      clearTimeout(state.callTimeout);
-    },
-
-    showCallEndedUI: (m) => {
-      const d = document.createElement('div');
-      d.className = 'call-ended-alert';
-      d.innerHTML = `
-        <div class="alert-content">
-          <p>${m}</p>
-          <button id="close-alert-btn" class="btn btn-primary">OK</button>
-        </div>
-      `;
-      document.body.appendChild(d);
-      document.getElementById('close-alert-btn').onclick = () => d.remove();
-    },
-
-    startCall: async (t) => {
-      if (state.isCallActive) return;
-
-      try {
-        // Test permissions first with mobile-friendly constraints
-        const constraints = utils.getMediaConstraints(t);
-        const testStream = await navigator.mediaDevices.getUserMedia(constraints);
-        testStream.getTracks().forEach(track => track.stop());
-      } catch (err) {
-        return alert(`Please allow ${t === 'video' ? 'camera and microphone' : 'microphone'} access.`);
-      }
-
-      state.isCallActive = true;
-      state.currentCallType = t;
-      state.currentCallId = utils.generateId();
-      state.iceQueues[state.currentCallId] = {};
-
-      callManager.showCallingUI(t);
-
-      try {
-        const constraints = utils.getMediaConstraints(t);
-        state.localStream = await navigator.mediaDevices.getUserMedia(constraints);
-
-        debug.log('Local stream tracks:', state.localStream.getTracks());
-        callManager.showCallUI(t);
-
-        socket.emit('call-initiate', {
-          room,
-          callId: state.currentCallId,
-          callType: t,
-          caller: username
-        });
-
-        // Get participants after a short delay
-        setTimeout(() => {
-          socket.emit('get-call-participants', { room, callId: state.currentCallId });
-        }, 1000);
-
-        state.callTimeout = setTimeout(() => {
-          if (Object.keys(state.peerConnections).length === 0) {
-            callManager.endCall();
-            callManager.showCallEndedUI('No one answered');
-          }
-        }, 45000);
-      } catch (err) {
-        debug.error('Call start failed:', err);
-        callManager.endCall();
-        callManager.showCallEndedUI('Call failed to start: ' + err.message);
-      }
-    },
-
-    handleIncomingCall: async ({ callType, callId, caller }) => {
-      if (state.isCallActive) {
-        socket.emit('reject-call', { room, callId, reason: 'busy' });
-        return;
-      }
-
-      const ok = confirm(`${caller} is calling (${callType}). Accept?`);
-      if (!ok) {
-        socket.emit('reject-call', { room, callId });
-        return;
-      }
-
-      state.isCallActive = true;
-      state.currentCallType = callType;
-      state.currentCallId = callId;
-      state.iceQueues[callId] = {};
-
-      try {
-        const constraints = utils.getMediaConstraints(callType);
-        state.localStream = await navigator.mediaDevices.getUserMedia(constraints);
-
-        callManager.showCallUI(callType);
-        socket.emit('call-accepted', { room, callId });
-        socket.emit('get-call-participants', { room, callId });
-
-        state.callTimeout = setTimeout(() => {
-          if (Object.keys(state.peerConnections).length === 0) {
-            callManager.endCall();
-            callManager.showCallEndedUI('Failed to establish connection');
-          }
-        }, 30000);
-      } catch (e) {
-        debug.error('Media access failed:', e);
-        callManager.endCall();
-        callManager.showCallEndedUI('Failed to access media devices');
-      }
-    },
-
-    endCall: () => {
-      if (!state.isCallActive) return;
-
-      debug.log('Ending call and cleaning up resources');
-      clearTimeout(state.callTimeout);
-
-      // Clean up peer connections
-      Object.keys(state.peerConnections).forEach(userId => {
-        const pc = state.peerConnections[userId];
-        if (pc) {
-          pc.getSenders().forEach(sender => {
-            if (sender.track) sender.track.stop();
-          });
-          pc.close();
-        }
-        webrtc.removePeerConnection(userId);
-      });
-
-      // Clean up local stream
-      if (state.localStream) {
-        state.localStream.getTracks().forEach(track => track.stop());
-        state.localStream = null;
-      }
-
-      state.isCallActive = false;
-      state.currentCallId = null;
-      state.currentCallType = null;
-      callManager.hideCallUI();
-
-      // Notify server only if we're the ones ending the call
-      if (state.currentCallId) {
-        socket.emit('end-call', { room, callId: state.currentCallId });
-      }
-    },
-
-    toggleAudio: () => {
-      state.isAudioMuted = !state.isAudioMuted;
-      if (state.localStream) {
-        state.localStream.getAudioTracks().forEach(t => t.enabled = !state.isAudioMuted);
-      }
-      callManager.updateMediaButtons();
-      socket.emit('mute-state', {
-        room,
-        callId: state.currentCallId,
-        isAudioMuted: state.isAudioMuted,
-        userId: username
-      });
-    },
-
-    toggleVideo: () => {
-      state.isVideoOff = !state.isVideoOff;
-      if (state.localStream) {
-        state.localStream.getVideoTracks().forEach(t => t.enabled = !state.isVideoOff);
-      }
-      callManager.updateMediaButtons();
-      socket.emit('video-state', {
-        room,
-        callId: state.currentCallId,
-        isVideoOff: state.isVideoOff,
-        userId: username
-      });
-    },
-
-    flipCamera: async () => {
-      if (!state.localStream || state.currentCallType !== 'video') return;
-
-      try {
-        state.localStream.getVideoTracks().forEach(t => t.stop());
-        state.currentFacingMode = state.currentFacingMode === 'user' ? 'environment' : 'user';
-
-        const constraints = utils.getMediaConstraints('video');
-        const ns = await navigator.mediaDevices.getUserMedia(constraints);
-
-        state.localStream.getTracks().forEach(t => state.localStream.removeTrack(t));
-        ns.getTracks().forEach(t => state.localStream.addTrack(t));
-
-        // Update mirror effect based on camera type
-        const lv = document.getElementById(`local-video-${username}`);
-        if (lv) {
-          lv.srcObject = state.localStream;
-          lv.style.transform = state.currentFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
-        }
-
-        Object.values(state.peerConnections).forEach(pc => {
-          const s = pc.getSenders().find(x => x.track?.kind === 'video');
-          if (s) s.replaceTrack(state.localStream.getVideoTracks()[0]);
-        });
-
-      } catch (e) {
-        debug.error('Camera flip failed:', e);
-      }
-    },
-
-    updateMediaButtons: () => {
-      const a = document.getElementById('toggle-audio-btn');
-      const v = document.getElementById('toggle-video-btn');
-
-      if (a) {
-        a.innerHTML = `<i class="fas fa-microphone${state.isAudioMuted ? '-slash' : ''}"></i>`;
-        a.title = state.isAudioMuted ? 'Unmute' : 'Mute';
-      }
-
-      if (v) {
-        v.innerHTML = `<i class="fas fa-video${state.isVideoOff ? '-slash' : ''}"></i>`;
-        v.title = state.isVideoOff ? 'Enable video' : 'Disable video';
-      }
-    }
-  };
-
-  // Event Listeners
-  const setupEventListeners = () => {
-    elements.cancelReplyBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      state.replyTo = null;
-      elements.replyPreview.classList.add('d-none');
-    });
-
-    // Improved swipe-to-reply
-    elements.chatMessages.addEventListener('touchstart', e => {
-      if (e.target.closest('.message')) {
-        state.swipeState.active = true;
-        state.swipeState.startX = e.touches[0].clientX;
-        state.swipeState.currentX = state.swipeState.startX;
-        state.swipeState.target = e.target.closest('.message');
-        state.swipeState.target.style.transition = 'none';
-      }
-    }, { passive: true });
-
-    elements.chatMessages.addEventListener('touchmove', e => {
-      if (state.swipeState.active) {
-        e.preventDefault();
-        const deltaX = e.touches[0].clientX - state.swipeState.startX;
-        if (Math.abs(deltaX) > 10) {
-          state.swipeState.currentX = e.touches[0].clientX;
-          const translateX = Math.min(0, Math.max(-100, deltaX));
-          state.swipeState.target.style.transform = `translateX(${translateX}px)`;
-        }
-      }
-    }, { passive: false });
-
-    elements.chatMessages.addEventListener('touchend', e => {
-      if (state.swipeState.active) {
-        state.swipeState.active = false;
-        const deltaX = state.swipeState.currentX - state.swipeState.startX;
-
-        state.swipeState.target.style.transition = 'transform 0.3s ease';
-        state.swipeState.target.style.transform = '';
-
-        if (Math.abs(deltaX) > state.SWIPE_THRESHOLD) {
-          const u = state.swipeState.target.querySelector('.meta strong').textContent;
-          const t = state.swipeState.target.querySelector('.text').textContent;
-          const id = state.swipeState.target.id;
-          messageHandler.setupReply(u, id, t);
-
-          // Add visual feedback
-          const feedback = document.createElement('div');
-          feedback.className = 'swipe-feedback';
-          feedback.textContent = 'Replying...';
-          state.swipeState.target.appendChild(feedback);
-          setTimeout(() => feedback.remove(), 1000);
-        }
-      }
-    }, { passive: true });
-
-    // Typing indicator
-    elements.msgInput.addEventListener('input', () => {
-      messageHandler.handleTyping();
-    });
-
-    elements.chatForm.addEventListener('submit', e => {
-      e.preventDefault();
-      const txt = elements.msgInput.value.trim();
-      if (!txt) return;
-
-      debug.log('Sending message:', txt);
-      socket.emit('chatMessage', {
-        text: txt,
-        replyTo: state.replyTo ? {
-          id: state.replyTo.id,
-          username: state.replyTo.username,
-          text: state.replyTo.text
-        } : null,
-        room,
-        time: utils.getCurrentTime()
-      });
-
-      elements.msgInput.value = '';
-      state.replyTo = null;
-      elements.replyPreview.classList.add('d-none');
-    });
-
-    elements.themeBtn.addEventListener('click', () => {
-      const dark = !document.body.classList.toggle('dark');
-      localStorage.setItem('darkMode', dark);
-      elements.chatMessages.classList.toggle('dark-bg', dark);
-    });
-
-    elements.muteBtn.addEventListener('click', () => {
-      state.isMuted = !state.isMuted;
-      localStorage.setItem('isMuted', state.isMuted);
-      elements.muteBtn.innerHTML = state.isMuted ? '<i class="fas fa-bell-slash"></i>' : '<i class="fas fa-bell"></i>';
-      elements.muteBtn.title = state.isMuted ? 'Unmute notifications' : 'Mute notifications';
-    });
-
-    elements.videoCallBtn.addEventListener('click', () => callManager.startCall('video'));
-    elements.audioCallBtn.addEventListener('click', () => callManager.startCall('audio'));
-
-    window.addEventListener('beforeunload', () => {
-      if (state.isCallActive) {
-        socket.emit('end-call', { room, callId: state.currentCallId });
-      }
-    });
-
-    document.addEventListener('click', () => {
-      document.hasUserInteraction = true;
-      if (window.pendingNotifications) {
-        window.pendingNotifications.forEach(fn => fn());
-        window.pendingNotifications = [];
-      }
-    }, { once: true });
-  };
-
-  // Socket.IO Handlers (Fixed Version)
-  const setupSocketHandlers = () => {
-    socket.on('connect', () => {
-      state.reconnectAttempts = 0;
-      utils.updateConnectionStatus({ text: 'Connected', type: 'connected' });
-      if (!state.hasJoined) {
-        socket.emit('joinRoom', { username, room });
-        state.hasJoined = true;
-      }
-    });
-
-    socket.on('disconnect', (reason) => {
-      utils.updateConnectionStatus({ text: 'Disconnected', type: 'disconnected' });
-      debug.log('Disconnected:', reason);
-      if (reason === 'io server disconnect') {
-        setTimeout(() => socket.connect(), 1000);
-      }
-    });
-
-    socket.on('reconnect_attempt', (attempt) => {
-      state.reconnectAttempts = attempt;
-      utils.updateConnectionStatus({
-        text: `Reconnecting (${attempt}/${state.MAX_RECONNECT_ATTEMPTS})...`,
-        type: 'reconnecting'
-      });
-    });
-
-    socket.on('reconnect_failed', () => {
-      utils.updateConnectionStatus({
-        text: 'Failed to reconnect. Please refresh.',
-        type: 'error'
-      });
-    });
-
-    socket.on('connect_error', (err) => {
-      debug.error('Connection error:', err);
-      utils.updateConnectionStatus({
-        text: 'Connection error',
-        type: 'error'
-      });
-    });
-
-    socket.on('message', msg => {
-      debug.log('Received message:', msg);
-      if (msg.username !== username && !state.isMuted) {
-        utils.playNotificationSound();
-      }
-      messageHandler.addMessage(msg);
-    });
-
-    socket.on('typing', ({ username: u }) => {
-      debug.log(`${u} is typing`);
-      if (u !== username) messageHandler.showTypingIndicator(u);
-    });
-
-    socket.on('stopTyping', () => {
-      debug.log('Typing stopped');
-      document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
-    });
-
-    socket.on('incoming-call', callManager.handleIncomingCall);
-
-    socket.on('offer', async ({ offer, userId, callId }) => {
-      debug.log(`Received offer from ${userId}`);
-      if (callId !== state.currentCallId || !state.isCallActive) return;
-
-      const pc = state.peerConnections[userId] || await webrtc.establishPeerConnection(userId);
-
-      try {
-        const offerCollision = (offer.type === 'offer') &&
-          (state.makingOffer || pc.signalingState !== 'stable');
-
-        state.ignoreOffer = !state.isCallActive && offerCollision;
-        if (state.ignoreOffer) {
-          debug.log('Ignoring offer due to collision');
-          return;
-        }
-
-        await pc.setRemoteDescription(offer);
-        if (offer.type === 'offer') {
-          const answer = await pc.createAnswer({
-            offerToReceiveAudio: true,
-            offerToReceiveVideo: state.currentCallType === 'video'
-          });
-          await pc.setLocalDescription(answer);
-          socket.emit('answer', {
-            answer: pc.localDescription,
-            room,
-            callId,
-            targetUser: userId
-          });
-        }
-      } catch (err) {
-        debug.error('Offer handling failed:', err);
-      }
-    });
-
-    socket.on('answer', async ({ answer, userId, callId }) => {
-      debug.log(`Received answer from ${userId}`);
-      if (callId !== state.currentCallId) return;
-      const pc = state.peerConnections[userId];
-      if (!pc) return;
-
-      try {
-        await pc.setRemoteDescription(answer);
-      } catch (err) {
-        debug.error('Answer handling failed:', err);
-      }
-    });
-
-    socket.on('ice-candidate', async ({ candidate, userId, callId }) => {
-      debug.log(`Received ICE candidate from ${userId}`);
-
-      try {
-        if (callId !== state.currentCallId) {
-          debug.log('ICE candidate for inactive call, ignoring');
-          return;
-        }
-
-        const pc = state.peerConnections[userId];
-        if (pc) {
-          // If peer connection exists, try to add the candidate immediately
-          if (pc.remoteDescription && pc.remoteDescription.type) {
-            debug.log('Adding ICE candidate immediately');
-            await pc.addIceCandidate(candidate);
-          } else {
-            // Queue the candidate if we don't have remote description yet
-            debug.log('Queuing ICE candidate (no remote description)');
-            state.iceQueues[callId] = state.iceQueues[callId] || {};
-            state.iceQueues[callId][userId] = state.iceQueues[callId][userId] || [];
-            state.iceQueues[callId][userId].push(candidate);
-          }
-        } else {
-          // Queue the candidate if we don't have a peer connection yet
-          debug.log('Queuing ICE candidate (no peer connection)');
-          state.iceQueues[callId] = state.iceQueues[callId] || {};
-          state.iceQueues[callId][userId] = state.iceQueues[callId][userId] || [];
-          state.iceQueues[callId][userId].push(candidate);
-        }
-      } catch (err) {
-        debug.error('Failed to process ICE candidate:', err);
-      }
-    });
-
-    socket.on('call-rejected', ({ callId, reason, userId }) => {
-      debug.log(`Call rejected by ${userId}: ${reason}`);
-      if (callId === state.currentCallId) {
-        callManager.endCall();
-        callManager.showCallEndedUI(`${userId} declined the call`);
-      }
-    });
-
-    socket.on('call-ended', ({ callId, userId }) => {
-      debug.log(`Call ended by ${userId}`);
-      if (callId === state.currentCallId) {
-        callManager.endCall();
-        callManager.showCallEndedUI(userId === username ? 'Call ended' : `${userId} ended the call`);
-      }
-    });
-
-    socket.on('call-participants', ({ participants, callId }) => {
-      debug.log(`Received call participants: ${participants.join(', ')}`);
-      if (callId !== state.currentCallId) return;
-
-      participants.forEach(async userId => {
-        if (userId !== username && !state.peerConnections[userId]) {
-          await webrtc.establishPeerConnection(userId, true);
-        }
-      });
-    });
-
-    socket.on('user-joined', ({ username: u, time }) => {
-      messageHandler.addMessage({
-        username: 'ChatApp Bot',
-        text: `${u} joined the chat`,
-        time,
-        id: utils.generateId()
-      });
-    });
-
-    socket.on('user-left', ({ username: u, time }) => {
-      messageHandler.addMessage({
-        username: 'ChatApp Bot',
-        text: `${u} left the chat`,
-        time,
-        id: utils.generateId()
-      });
-
-      // Clean up peer connections if the user was in a call
-      if (state.isCallActive && state.peerConnections[u]) {
-        webrtc.removePeerConnection(u);
-      }
-    });
-
-    socket.on('mute-state-changed', ({ userId, isAudioMuted }) => {
-      if (userId === username) return;
-      const label = document.querySelector(`#remote-container-${userId} .video-user-label`);
-      if (label) {
-        label.innerHTML = `${userId} ${isAudioMuted ? '🔇' : '🎤'}`;
-      }
-    });
-
-    socket.on('video-state-changed', ({ userId, isVideoOff }) => {
-      if (userId === username) return;
-      const video = document.querySelector(`#remote-video-${userId}`);
-      if (video) {
-        video.style.display = isVideoOff ? 'none' : 'block';
-        const label = document.querySelector(`#remote-container-${userId} .video-user-label`);
-        if (label) {
-          label.innerHTML = `${userId} ${isVideoOff ? '📷❌' : '📷'}`;
-        }
-      }
-    });
-
-    socket.on('message-seen', ({ messageId, seenBy }) => {
-      const msgEl = document.getElementById(messageId);
-      if (msgEl) {
-        const seen = seenBy || [];
-        const icon = seen.length > 1 ? '✓✓' : '✓';
-        const names = seen.map(u => u === username ? 'You' : u).join(', ');
-
-        let statusEl = msgEl.querySelector('.message-status');
-        if (!statusEl) {
-          statusEl = document.createElement('div');
-          statusEl.className = 'message-status';
-          msgEl.appendChild(statusEl);
-        }
-
-        statusEl.innerHTML = `
-      <span class="seen-icon">${icon}</span>
-      ${names ? `<span class="seen-users">${names}</span>` : ''}
-    `;
-      }
-    });
-
-    // Initialize the application
-    const init = () => {
-      debug.log('Initializing application');
-      utils.initDarkMode();
-      setupEventListeners();
-      setupSocketHandlers();
-
-      // Set initial mute button state
-      elements.muteBtn.innerHTML = state.isMuted ? '<i class="fas fa-bell-slash"></i>' : '<i class="fas fa-bell"></i>';
-      elements.muteBtn.title = state.isMuted ? 'Unmute notifications' : 'Mute notifications';
-
-      // Set room name
-      elements.roomName.textContent = room || 'Main Room';
-
-      // Set initial connection status
-      utils.updateConnectionStatus({ text: 'Connecting...', type: 'connecting' });
-
-      // Check for user interaction to play sounds
-      document.hasUserInteraction = false;
-      document.addEventListener('click', () => {
-        document.hasUserInteraction = true;
-      }, { once: true });
+    // Initialize call structure
+    activeCalls[room] = activeCalls[room] || {};
+    activeCalls[room][callId] = {
+      callId,
+      callType,
+      participants: [caller],
+      offers: {},
+      answers: {},
+      iceCandidates: {},
+      timestamp: Date.now()
     };
 
-    // Start the application
-    init();
+    console.log(`📞 Call initiated by ${caller} in ${room} (${callType}) ID:${callId}`);
+    
+    // Clean up old calls in this room
+    Object.keys(activeCalls[room]).forEach(id => {
+      if (id !== callId && Date.now() - activeCalls[room][id].timestamp > 3600000) {
+        delete activeCalls[room][id];
+      }
+    });
+
+    // Send call invitation to all room members except caller
+    socket.to(room).emit('incoming-call', { 
+      callId, 
+      callType, 
+      caller 
+    });
+  });
+
+  // Call acceptance with validation
+  socket.on('call-accepted', ({ room, callId }) => {
+    const call = activeCalls[room]?.[callId];
+    if (!call) {
+      console.error(`Call ${callId} not found in room ${room}`);
+      socket.emit('error', 'Call not found');
+      return;
+    }
+
+    const user = getCurrentUser(socket.id);
+    if (!user) {
+      socket.emit('error', 'User not identified');
+      return;
+    }
+
+    // Prevent duplicate participants
+    if (!call.participants.includes(user.username)) {
+      call.participants.push(user.username);
+    }
+
+    console.log(`✅ Call accepted by ${user.username} in ${room}`);
+    
+    // Notify all participants about the new participant
+    io.to(room).emit('user-joined-call', { 
+      userId: user.username,
+      callId
+    });
+    
+    // Send acceptance specifically to caller
+    const callerSocket = findUserSocket(call.participants[0]);
+    if (callerSocket) {
+      callerSocket.emit('call-accepted', { 
+        callId,
+        userId: user.username 
+      });
+    }
+  });
+
+  // Enhanced offer handling
+  socket.on('offer', ({ offer, room, callId, targetUser }) => {
+    const call = activeCalls[room]?.[callId];
+    if (!call) {
+      console.error(`Offer received for non-existent call ${callId}`);
+      return;
+    }
+
+    // Validate the sender is in the call
+    const sender = getCurrentUser(socket.id);
+    if (!sender || !call.participants.includes(sender.username)) {
+      console.error(`Unauthorized offer from ${sender?.username}`);
+      return;
+    }
+
+    call.offers[targetUser] = offer;
+    
+    const targetSocket = findUserSocket(targetUser);
+    if (targetSocket) {
+      console.log(`📤 Forwarding offer to ${targetUser}`);
+      targetSocket.emit('offer', { 
+        offer, 
+        callId, 
+        userId: sender.username 
+      });
+    } else {
+      console.error(`Target user ${targetUser} not found`);
+    }
+  });
+
+  // Enhanced answer handling
+  socket.on('answer', ({ answer, room, callId, targetUser }) => {
+    const call = activeCalls[room]?.[callId];
+    if (!call) {
+      console.error(`Answer received for non-existent call ${callId}`);
+      return;
+    }
+
+    // Validate the sender is in the call
+    const sender = getCurrentUser(socket.id);
+    if (!sender || !call.participants.includes(sender.username)) {
+      console.error(`Unauthorized answer from ${sender?.username}`);
+      return;
+    }
+
+    call.answers[targetUser] = answer;
+    
+    const targetSocket = findUserSocket(targetUser);
+    if (targetSocket) {
+      console.log(`📥 Forwarding answer to ${targetUser}`);
+      targetSocket.emit('answer', { 
+        answer, 
+        callId,
+        userId: sender.username
+      });
+    } else {
+      console.error(`Target user ${targetUser} not found`);
+    }
+  });
+
+  // Enhanced ICE candidate handling
+  socket.on('ice-candidate', ({ candidate, room, callId, targetUser }) => {
+    const call = activeCalls[room]?.[callId];
+    if (!call) {
+      console.error(`ICE candidate for non-existent call ${callId}`);
+      return;
+    }
+
+    // Validate the sender is in the call
+    const sender = getCurrentUser(socket.id);
+    if (!sender || !call.participants.includes(sender.username)) {
+      console.error(`Unauthorized ICE candidate from ${sender?.username}`);
+      return;
+    }
+
+    call.iceCandidates[targetUser] = call.iceCandidates[targetUser] || [];
+    call.iceCandidates[targetUser].push(candidate);
+    
+    const targetSocket = findUserSocket(targetUser);
+    if (targetSocket) {
+      console.log(`🧊 Forwarding ICE candidate to ${targetUser}`);
+      targetSocket.emit('ice-candidate', { 
+        candidate, 
+        callId,
+        userId: sender.username
+      });
+    } else {
+      console.error(`Target user ${targetUser} not found`);
+    }
+  });
+
+  // New: Get call participants
+  socket.on('get-call-participants', ({ room, callId }) => {
+    const call = activeCalls[room]?.[callId];
+    if (!call) return;
+
+    socket.emit('call-participants', {
+      callId,
+      participants: call.participants
+    });
+  });
+
+  // Enhanced call termination
+  socket.on('end-call', ({ room, callId }) => {
+    const call = activeCalls[room]?.[callId];
+    if (!call) return;
+
+    console.log(`📴 Ending call ${callId} in ${room}`);
+    io.to(room).emit('call-ended', { callId });
+    
+    // Cleanup call data
+    cleanupCall(room, callId);
+  });
+
+  // New: Call rejection handler
+  socket.on('reject-call', ({ room, callId, reason }) => {
+    const call = activeCalls[room]?.[callId];
+    if (!call) return;
+
+    const user = getCurrentUser(socket.id);
+    if (!user) return;
+
+    console.log(`❌ Call rejected by ${user.username}: ${reason}`);
+    
+    // Notify caller
+    const callerSocket = findUserSocket(call.participants[0]);
+    if (callerSocket) {
+      callerSocket.emit('call-rejected', { 
+        callId,
+        userId: user.username,
+        reason
+      });
+    }
+  });
+
+  // Enhanced disconnection handler
+  socket.on('disconnect', () => {
+    const user = userLeave(socket.id);
+    if (user) {
+      console.log(`🚪 ${user.username} disconnected`);
+      
+      // Cleanup any calls they were in
+      Object.entries(activeCalls).forEach(([room, calls]) => {
+        Object.entries(calls).forEach(([callId, call]) => {
+          if (call.participants.includes(user.username)) {
+            io.to(room).emit('user-left-call', {
+              userId: user.username,
+              callId
+            });
+            
+            if (call.participants.length <= 1) {
+              io.to(room).emit('call-ended', { callId });
+              cleanupCall(room, callId);
+            }
+          }
+        });
+      });
+
+      io.to(user.room).emit('message', 
+        formatMessage(botName, `${user.username} has left the chat`));
+
+      io.to(user.room).emit('roomUsers', {
+        room: user.room,
+        users: getRoomUsers(user.room)
+      });
+    }
+  });
+
+  // Debug endpoint
+  socket.on('getCallState', () => {
+    socket.emit('callState', {
+      activeCalls,
+      yourRooms: Array.from(socket.rooms)
+    });
+  });
+});
+
+// Helper function to clean up calls
+function cleanupCall(room, callId) {
+  if (activeCalls[room]) {
+    delete activeCalls[room][callId];
+    if (Object.keys(activeCalls[room]).length === 0) {
+      delete activeCalls[room];
+    }
+  }
+}
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
