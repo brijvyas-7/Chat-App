@@ -631,7 +631,7 @@ window.addEventListener('DOMContentLoaded', () => {
             <i class="fas fa-video${state.isVideoOff ? '-slash' : ''}"></i>
           </button>
           <button id="flip-camera-btn" class="control-btn flip-btn">
-            <i class="fas fa-camera-retro"></i>
+            <i class="fas fa-code"></i>
           </button>
         `;
       }
