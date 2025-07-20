@@ -1,4 +1,4 @@
-// Complete Chat Application with Video Calling (Full Version)
+// Complete Chat Application with Video Calling (Fixed Version)
 window.addEventListener('DOMContentLoaded', () => {
   // State Management
   const state = {
@@ -17,15 +17,19 @@ window.addEventListener('DOMContentLoaded', () => {
     currentCallType: null,
     currentFacingMode: 'user',
     lastTypingUpdate: 0,
-    touchStartX: 0,
-    touchEndX: 0,
     SWIPE_THRESHOLD: 60,
     MAX_RECONNECT_ATTEMPTS: 5,
     reconnectAttempts: 0,
     makingOffer: false,
     ignoreOffer: false,
     typingTimeout: null,
-    debugMode: true
+    debugMode: true,
+    swipeState: {
+      active: false,
+      startX: 0,
+      currentX: 0,
+      target: null
+    }
   };
 
   // DOM Elements
@@ -74,12 +78,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Utility Functions
   const utils = {
-    generateId: () => {
-      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-        const r = (Math.random() * 16) | 0;
-        return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-      });
-    },
+    generateId: () => crypto.randomUUID(),
 
     initDarkMode: () => {
       const dark = localStorage.getItem('darkMode') === 'true';
@@ -102,6 +101,16 @@ window.addEventListener('DOMContentLoaded', () => {
           media.notificationSound.play().catch(e => debug.error('Notification sound error:', e));
         });
       }
+    },
+
+    getCurrentTime: () => {
+      const now = new Date();
+      let hours = now.getHours();
+      const minutes = now.getMinutes().toString().padStart(2, '0');
+      const ampm = hours >= 12 ? 'pm' : 'am';
+      hours = hours % 12;
+      hours = hours ? hours : 12;
+      return `${hours}:${minutes} ${ampm}`;
     }
   };
 
@@ -144,16 +153,8 @@ window.addEventListener('DOMContentLoaded', () => {
       }
 
       el.innerHTML = html;
-
-      if (!isSys) {
-        el.onclick = () => {
-          const u = el.querySelector('.meta strong').textContent;
-          const t = el.querySelector('.text').textContent;
-          messageHandler.setupReply(u, el.id, t);
-        };
-      }
-
       elements.chatMessages.appendChild(el);
+      
       setTimeout(() => {
         elements.chatMessages.scrollTo({ top: elements.chatMessages.scrollHeight, behavior: 'smooth' });
       }, 20);
@@ -170,20 +171,28 @@ window.addEventListener('DOMContentLoaded', () => {
 
     showTypingIndicator: (u) => {
       debug.log('Showing typing indicator for:', u);
-      if (!document.querySelector('.typing-indicator')) {
-        const d = document.createElement('div');
-        d.className = 'typing-indicator other';
-        d.innerHTML = `
-          <div class="dots">
-            <span class="dot"></span>
-            <span class="dot"></span>
-            <span class="dot"></span>
-          </div>
-          <span class="typing-text">${u} is typing...</span>
-        `;
+      document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
+
+      const d = document.createElement('div');
+      d.className = 'typing-indicator other';
+      d.innerHTML = `
+        <div class="dots">
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+        </div>
+        <span class="typing-text">${u} is typing...</span>
+      `;
+      
+      // Add after last message
+      const messages = elements.chatMessages.querySelectorAll('.message');
+      if (messages.length > 0) {
+        elements.chatMessages.insertBefore(d, messages[messages.length - 1].nextSibling);
+      } else {
         elements.chatMessages.appendChild(d);
-        elements.chatMessages.scrollTo({ top: elements.chatMessages.scrollHeight, behavior: 'smooth' });
       }
+      
+      elements.chatMessages.scrollTo({ top: elements.chatMessages.scrollHeight, behavior: 'smooth' });
     },
 
     handleTyping: () => {
@@ -225,7 +234,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
         pc.oniceconnectionstatechange = () => {
           debug.log(`${userId} ICE state: ${pc.iceConnectionState}`);
-          if (['disconnected', 'failed'].includes(pc.iceConnectionState)) {
+          if (pc.iceConnectionState === 'failed') {
+            debug.log('ICE connection failed, attempting restart...');
+            webrtc.restartIce(userId);
+          } else if (['disconnected', 'failed'].includes(pc.iceConnectionState)) {
             webrtc.removePeerConnection(userId);
           }
         };
@@ -249,8 +261,28 @@ window.addEventListener('DOMContentLoaded', () => {
         pc.ontrack = (event) => {
           debug.log(`Track event from ${userId}`);
           if (event.streams && event.streams.length > 0) {
-            const stream = event.streams.find(s => s.getVideoTracks().length > 0) || event.streams[0];
+            const stream = event.streams[0];
+            state.remoteStreams[userId] = stream;
             webrtc.attachRemoteStream(userId, stream);
+          }
+        };
+
+        pc.onnegotiationneeded = async () => {
+          debug.log(`Negotiation needed for ${userId}`);
+          try {
+            state.makingOffer = true;
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            socket.emit('offer', {
+              offer: pc.localDescription,
+              room,
+              callId: state.currentCallId,
+              targetUser: userId
+            });
+          } catch (err) {
+            debug.error('Error during negotiation:', err);
+          } finally {
+            state.makingOffer = false;
           }
         };
 
@@ -261,56 +293,74 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     },
 
+    restartIce: async (userId) => {
+      const pc = state.peerConnections[userId];
+      if (!pc) return;
+
+      try {
+        debug.log(`Restarting ICE for ${userId}`);
+        const offer = await pc.createOffer({ iceRestart: true });
+        await pc.setLocalDescription(offer);
+        socket.emit('offer', {
+          offer: pc.localDescription,
+          room,
+          callId: state.currentCallId,
+          targetUser: userId
+        });
+      } catch (err) {
+        debug.error('Error restarting ICE:', err);
+      }
+    },
+
     attachRemoteStream: (userId, stream) => {
       debug.log(`Attaching remote stream for ${userId}`);
       if (!stream) return;
 
-      state.remoteStreams[userId] = stream;
+      // Remove existing video element if it exists
+      const existing = document.getElementById(`remote-container-${userId}`);
+      if (existing) existing.remove();
 
-      if (state.currentCallType === 'video' && stream.getVideoTracks().length > 0) {
-        const existing = document.getElementById(`remote-container-${userId}`);
-        if (existing) existing.remove();
+      const container = document.createElement('div');
+      container.className = 'video-container';
+      container.id = `remote-container-${userId}`;
 
-        const container = document.createElement('div');
-        container.className = 'video-container';
-        container.id = `remote-container-${userId}`;
+      const video = document.createElement('video');
+      video.id = `remote-video-${userId}`;
+      video.autoplay = true;
+      video.playsInline = true;
 
-        const video = document.createElement('video');
-        video.id = `remote-video-${userId}`;
-        video.autoplay = true;
-        video.playsInline = true;
+      const label = document.createElement('div');
+      label.className = 'video-user-label';
+      label.textContent = userId;
 
-        const label = document.createElement('div');
-        label.className = 'video-user-label';
-        label.textContent = userId;
+      container.appendChild(video);
+      container.appendChild(label);
+      document.getElementById('video-grid').appendChild(container);
 
-        container.appendChild(video);
-        container.appendChild(label);
-        document.getElementById('video-grid').appendChild(container);
-
-        video.srcObject = stream;
-        video.onloadedmetadata = () => {
-          video.play().catch(e => {
-            debug.error('Video play failed:', e);
-            webrtc.showVideoPlayButton(container, video);
-          });
-        };
-      } else {
-        webrtc.addAudioElement(userId);
-      }
+      video.srcObject = stream;
+      video.onloadedmetadata = () => {
+        video.play().catch(e => {
+          debug.error('Video play failed:', e);
+          webrtc.showVideoPlayButton(container, video);
+        });
+      };
     },
 
     establishPeerConnection: async (userId, isInitiator = false) => {
       debug.log(`Establishing connection with ${userId}, initiator: ${isInitiator}`);
-      if (!state.isCallActive || state.peerConnections[userId]) return;
+      if (state.peerConnections[userId]) {
+        debug.log(`Peer connection already exists for ${userId}`);
+        return;
+      }
 
       const pc = webrtc.createPeerConnection(userId);
       if (!pc) return;
 
       state.peerConnections[userId] = pc;
 
+      // Add local tracks if available
       if (state.localStream) {
-        debug.log('Adding local tracks');
+        debug.log('Adding local tracks to peer connection');
         state.localStream.getTracks().forEach(track => {
           try {
             pc.addTrack(track, state.localStream);
@@ -320,22 +370,24 @@ window.addEventListener('DOMContentLoaded', () => {
         });
       }
 
+      // Process any queued ICE candidates
       const queue = (state.iceQueues[state.currentCallId] || {})[userId] || [];
-      for (const c of queue) {
+      debug.log(`Processing ${queue.length} queued ICE candidates`);
+      for (const candidate of queue) {
         try {
-          await pc.addIceCandidate(c);
+          await pc.addIceCandidate(candidate);
         } catch (err) {
           debug.error('Error adding ICE candidate:', err);
         }
       }
-      if (state.iceQueues[state.currentCallId]) state.iceQueues[state.currentCallId][userId] = [];
+      delete state.iceQueues[state.currentCallId]?.[userId];
 
       if (isInitiator) {
         try {
           state.makingOffer = true;
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
-
+          
           socket.emit('offer', {
             offer: pc.localDescription,
             room,
@@ -367,7 +419,7 @@ window.addEventListener('DOMContentLoaded', () => {
       video.playsInline = true;
       video.muted = isLocal;
 
-      // In the webrtc.addVideoElement function or similar:
+      // Mirror only front camera
       if (isLocal) {
         video.style.transform = state.currentFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
       }
@@ -391,27 +443,6 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     },
 
-    addAudioElement: (userId) => {
-      const g = document.getElementById('video-grid');
-      if (!g) return;
-
-      const c = document.createElement('div');
-      c.className = 'audio-container';
-      c.id = `audio-container-${userId}`;
-
-      const l = document.createElement('div');
-      l.className = 'video-user-label';
-      l.textContent = userId === username ? 'You' : userId;
-
-      const i = document.createElement('div');
-      i.className = 'audio-icon';
-      i.innerHTML = '<i class="fas fa-microphone"></i>';
-
-      c.appendChild(i);
-      c.appendChild(l);
-      g.appendChild(c);
-    },
-
     showVideoPlayButton: (container, video) => {
       const existingBtn = container.querySelector('.video-play-btn');
       if (existingBtn) return;
@@ -431,7 +462,6 @@ window.addEventListener('DOMContentLoaded', () => {
       debug.log(`Removing peer connection for ${userId}`);
       if (state.peerConnections[userId]) {
         try {
-          // Stop all tracks before closing
           const pc = state.peerConnections[userId];
           pc.getSenders().forEach(sender => {
             if (sender.track) sender.track.stop();
@@ -443,6 +473,7 @@ window.addEventListener('DOMContentLoaded', () => {
         delete state.peerConnections[userId];
       }
 
+      // Remove UI elements
       const vc = document.getElementById(`remote-container-${userId}`);
       if (vc) vc.remove();
 
@@ -499,7 +530,7 @@ window.addEventListener('DOMContentLoaded', () => {
             <i class="fas fa-video${state.isVideoOff ? '-slash' : ''}"></i>
           </button>
           <button id="flip-camera-btn" class="control-btn flip-btn">
-            <i class="fas fa-code"></i>
+            <i class="fas fa-camera-retro"></i>
           </button>
         `;
       }
@@ -582,7 +613,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
         debug.log('Local stream tracks:', state.localStream.getTracks());
         callManager.showCallUI(t);
-
+        
         socket.emit('call-initiate', {
           room,
           callId: state.currentCallId,
@@ -591,7 +622,7 @@ window.addEventListener('DOMContentLoaded', () => {
         });
 
         state.callTimeout = setTimeout(() => {
-          if (!Object.keys(state.peerConnections).length) {
+          if (Object.keys(state.peerConnections).length === 0) {
             callManager.endCall();
             callManager.showCallEndedUI('No one answered');
           }
@@ -637,6 +668,13 @@ window.addEventListener('DOMContentLoaded', () => {
         callManager.showCallUI(callType);
         socket.emit('accept-call', { room, callId });
         socket.emit('get-call-participants', { room, callId });
+
+        state.callTimeout = setTimeout(() => {
+          if (Object.keys(state.peerConnections).length === 0) {
+            callManager.endCall();
+            callManager.showCallEndedUI('Failed to establish connection');
+          }
+        }, 30000);
       } catch (e) {
         debug.error('Media access failed:', e);
         callManager.endCall();
@@ -645,24 +683,35 @@ window.addEventListener('DOMContentLoaded', () => {
     },
 
     endCall: () => {
+      if (!state.isCallActive) return;
+      
       debug.log('Ending call and cleaning up resources');
-      Object.keys(state.peerConnections).forEach(webrtc.removePeerConnection);
-
+      clearTimeout(state.callTimeout);
+      
+      // Clean up peer connections
+      Object.keys(state.peerConnections).forEach(userId => {
+        const pc = state.peerConnections[userId];
+        if (pc) {
+          pc.getSenders().forEach(sender => {
+            if (sender.track) sender.track.stop();
+          });
+          pc.close();
+        }
+        webrtc.removePeerConnection(userId);
+      });
+      
+      // Clean up local stream
       if (state.localStream) {
-        debug.log('Stopping local stream tracks');
-        state.localStream.getTracks().forEach(t => {
-          t.stop();
-          debug.log(`Stopped ${t.kind} track`);
-        });
+        state.localStream.getTracks().forEach(track => track.stop());
         state.localStream = null;
       }
 
       state.isCallActive = false;
       state.currentCallId = null;
       state.currentCallType = null;
-      clearTimeout(state.callTimeout);
       callManager.hideCallUI();
-
+      
+      // Notify server only if we're the ones ending the call
       if (state.currentCallId) {
         socket.emit('end-call', { room, callId: state.currentCallId });
       }
@@ -719,7 +768,6 @@ window.addEventListener('DOMContentLoaded', () => {
         const lv = document.getElementById(`local-video-${username}`);
         if (lv) {
           lv.srcObject = state.localStream;
-          // Mirror only for front camera (user), not for rear camera (environment)
           lv.style.transform = state.currentFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
         }
 
@@ -757,29 +805,49 @@ window.addEventListener('DOMContentLoaded', () => {
       elements.replyPreview.classList.add('d-none');
     });
 
-    // Enhanced swipe-to-reply with debugging
+    // Improved swipe-to-reply
     elements.chatMessages.addEventListener('touchstart', e => {
-      state.touchStartX = e.changedTouches[0].screenX;
-      debug.log('Touch started at:', state.touchStartX);
+      if (e.target.closest('.message')) {
+        state.swipeState.active = true;
+        state.swipeState.startX = e.touches[0].clientX;
+        state.swipeState.currentX = state.swipeState.startX;
+        state.swipeState.target = e.target.closest('.message');
+        state.swipeState.target.style.transition = 'none';
+      }
     }, { passive: true });
 
+    elements.chatMessages.addEventListener('touchmove', e => {
+      if (state.swipeState.active) {
+        e.preventDefault();
+        const deltaX = e.touches[0].clientX - state.swipeState.startX;
+        if (Math.abs(deltaX) > 10) {
+          state.swipeState.currentX = e.touches[0].clientX;
+          const translateX = Math.min(0, Math.max(-100, deltaX));
+          state.swipeState.target.style.transform = `translateX(${translateX}px)`;
+        }
+      }
+    }, { passive: false });
+
     elements.chatMessages.addEventListener('touchend', e => {
-      state.touchEndX = e.changedTouches[0].screenX;
-      const diffX = state.touchStartX - state.touchEndX;
-      debug.log(`Touch ended at: ${state.touchEndX}, diff: ${diffX}`);
-
-      if (Math.abs(diffX) > state.SWIPE_THRESHOLD) {
-        const messageElement = document.elementFromPoint(
-          e.changedTouches[0].clientX,
-          e.changedTouches[0].clientY
-        );
-
-        if (messageElement && messageElement.classList.contains('message')) {
-          const u = messageElement.querySelector('.meta strong').textContent;
-          const t = messageElement.querySelector('.text').textContent;
-          const id = messageElement.id;
-          debug.log(`Swiped to reply to message ${id} from ${u}`);
+      if (state.swipeState.active) {
+        state.swipeState.active = false;
+        const deltaX = state.swipeState.currentX - state.swipeState.startX;
+        
+        state.swipeState.target.style.transition = 'transform 0.3s ease';
+        state.swipeState.target.style.transform = '';
+        
+        if (Math.abs(deltaX) > state.SWIPE_THRESHOLD) {
+          const u = state.swipeState.target.querySelector('.meta strong').textContent;
+          const t = state.swipeState.target.querySelector('.text').textContent;
+          const id = state.swipeState.target.id;
           messageHandler.setupReply(u, id, t);
+          
+          // Add visual feedback
+          const feedback = document.createElement('div');
+          feedback.className = 'swipe-feedback';
+          feedback.textContent = 'Replying...';
+          state.swipeState.target.appendChild(feedback);
+          setTimeout(() => feedback.remove(), 1000);
         }
       }
     }, { passive: true });
@@ -795,10 +863,15 @@ window.addEventListener('DOMContentLoaded', () => {
       if (!txt) return;
 
       debug.log('Sending message:', txt);
-      socket.emit('chatMessage', {
-        text: txt,
-        replyTo: state.replyTo,
-        room
+      socket.emit('chatMessage', { 
+        text: txt, 
+        replyTo: state.replyTo ? {
+          id: state.replyTo.id,
+          username: state.replyTo.username,
+          text: state.replyTo.text
+        } : null,
+        room,
+        time: utils.getCurrentTime()
       });
 
       elements.msgInput.value = '';
@@ -904,11 +977,11 @@ window.addEventListener('DOMContentLoaded', () => {
       if (callId !== state.currentCallId || !state.isCallActive) return;
 
       const pc = state.peerConnections[userId] || await webrtc.establishPeerConnection(userId);
-
+      
       try {
-        const offerCollision = (offer.type === 'offer') &&
+        const offerCollision = (offer.type === 'offer') && 
           (state.makingOffer || pc.signalingState !== 'stable');
-
+        
         state.ignoreOffer = !state.isCallActive && offerCollision;
         if (state.ignoreOffer) return;
 
@@ -940,16 +1013,23 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    socket.on('ice-candidate', ({ candidate, userId, callId }) => {
+    socket.on('ice-candidate', async ({ candidate, userId, callId }) => {
       debug.log(`Received ICE candidate from ${userId}`);
-      if (!state.peerConnections[userId]) {
-        state.iceQueues[callId] = state.iceQueues[callId] || {};
-        state.iceQueues[callId][userId] = state.iceQueues[callId][userId] || [];
-        state.iceQueues[callId][userId].push(candidate);
-      } else {
-        state.peerConnections[userId].addIceCandidate(candidate).catch(err => {
-          debug.error('Error adding ICE candidate:', err);
-        });
+      
+      try {
+        const pc = state.peerConnections[userId];
+        if (pc) {
+          await pc.addIceCandidate(candidate);
+          debug.log('Successfully added ICE candidate');
+        } else {
+          // Queue candidate if peer connection doesn't exist yet
+          state.iceQueues[callId] = state.iceQueues[callId] || {};
+          state.iceQueues[callId][userId] = state.iceQueues[callId][userId] || [];
+          state.iceQueues[callId][userId].push(candidate);
+          debug.log(`Queued ICE candidate for ${userId}`);
+        }
+      } catch (err) {
+        debug.error('Error adding ICE candidate:', err);
       }
     });
 
@@ -1032,7 +1112,7 @@ window.addEventListener('DOMContentLoaded', () => {
         gap: 10px;
         padding: 10px;
         width: 100%;
-        height: calc(100% - 60px);
+        height: calc(100% - 80px);
         overflow-y: auto;
       }
       .video-container {
@@ -1046,6 +1126,9 @@ window.addEventListener('DOMContentLoaded', () => {
         width: 100%;
         height: 100%;
         object-fit: cover;
+      }
+      .local-video-container video {
+        transform: scaleX(-1);
       }
       .video-user-label {
         position: absolute;
@@ -1079,6 +1162,7 @@ window.addEventListener('DOMContentLoaded', () => {
         padding: 8px 12px;
         color: #666;
         font-style: italic;
+        margin-top: 5px;
       }
       .dots {
         display: flex;
@@ -1106,14 +1190,15 @@ window.addEventListener('DOMContentLoaded', () => {
         background: rgba(0,0,0,0.7);
         color: white;
         border: none;
-        border-radius: 4px;
-        padding: 8px 12px;
-        font-size: 14px;
+        border-radius: 50%;
+        width: 50px;
+        height: 50px;
+        font-size: 20px;
         cursor: pointer;
         z-index: 10;
         display: flex;
         align-items: center;
-        gap: 8px;
+        justify-content: center;
       }
       .sound-permission-btn {
         position: relative;
@@ -1121,6 +1206,10 @@ window.addEventListener('DOMContentLoaded', () => {
         left: auto;
         transform: none;
         margin-top: 10px;
+        border-radius: 4px;
+        padding: 8px 12px;
+        width: auto;
+        height: auto;
       }
       .connection-status {
         position: fixed;
@@ -1169,6 +1258,87 @@ window.addEventListener('DOMContentLoaded', () => {
       .dark .alert-content {
         background: #333;
         color: white;
+      }
+      .message {
+        transition: transform 0.3s ease;
+        touch-action: pan-y;
+      }
+      .swipe-feedback {
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: rgba(0,0,0,0.7);
+        color: white;
+        padding: 5px 10px;
+        border-radius: 15px;
+        font-size: 12px;
+        animation: fadeIn 0.3s ease;
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-50%) translateX(20px); }
+        to { opacity: 1; transform: translateY(-50%) translateX(0); }
+      }
+      .video-controls {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        justify-content: center;
+        gap: 15px;
+        padding: 15px;
+        background: rgba(0,0,0,0.5);
+        z-index: 1001;
+      }
+      .video-controls button {
+        border: none;
+        border-radius: 50%;
+        width: 60px;
+        height: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+      }
+      .video-controls button:hover {
+        transform: scale(1.1);
+      }
+      .video-controls button i {
+        font-size: 20px;
+      }
+      .control-btn.end-btn {
+        background-color: #f44336;
+        color: white;
+      }
+      .control-btn.audio-btn {
+        background-color: #2196F3;
+        color: white;
+      }
+      .control-btn.video-btn {
+        background-color: #4CAF50;
+        color: white;
+      }
+      .control-btn.flip-btn {
+        background-color: #FFC107;
+        color: black;
+      }
+      @media (max-width: 768px) {
+        .video-grid {
+          grid-template-columns: 1fr;
+        }
+        .video-container {
+          aspect-ratio: 16/9;
+        }
+        .video-controls button {
+          width: 50px;
+          height: 50px;
+        }
+        .video-controls button i {
+          font-size: 18px;
+        }
       }
     `;
     document.head.appendChild(style);
