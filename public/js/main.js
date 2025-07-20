@@ -190,16 +190,44 @@ window.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      console.log('Attaching remote stream for:', userId, stream);
+
+      // Check if video tracks exist
       const hasVideo = stream.getVideoTracks().length > 0;
-      console.log(`Attaching stream for ${userId} - has video: ${hasVideo}`);
+      console.log('Remote stream has video:', hasVideo);
 
       state.remoteStreams[userId] = stream;
 
       if (state.currentCallType === 'video' && hasVideo) {
-        setTimeout(() => {
-          webrtc.addVideoElement('remote', userId, stream);
-        }, 100);
+        // Remove any existing video element first
+        const existing = document.getElementById(`remote-container-${userId}`);
+        if (existing) existing.remove();
+
+        // Create new video element
+        const container = document.createElement('div');
+        container.className = 'video-container';
+        container.id = `remote-container-${userId}`;
+
+        const video = document.createElement('video');
+        video.id = `remote-video-${userId}`;
+        video.autoplay = true;
+        video.playsInline = true;
+
+        const label = document.createElement('div');
+        label.className = 'video-user-label';
+        label.textContent = userId;
+
+        container.appendChild(video);
+        container.appendChild(label);
+        document.getElementById('video-grid').appendChild(container);
+
+        video.srcObject = stream;
+        video.onloadedmetadata = () => {
+          console.log('Remote video metadata loaded');
+          video.play().catch(e => console.error('Remote video play failed:', e));
+        };
       } else {
+        // Handle audio-only case
         webrtc.addAudioElement(userId);
       }
     },
@@ -213,21 +241,24 @@ window.addEventListener('DOMContentLoaded', () => {
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
             { urls: 'stun:stun2.l.google.com:19302' }
-          ],
-          iceCandidatePoolSize: 10
+          ]
         });
         state.peerConnections[userId] = pc;
 
+        // In your establishPeerConnection function:
         pc.oniceconnectionstatechange = () => {
-          console.log(`ICE connection state changed to: ${pc.iceConnectionState} for ${userId}`);
-          if (['disconnected', 'failed'].includes(pc.iceConnectionState)) {
-            webrtc.removePeerConnection(userId);
+          console.log('ICE connection state:', pc.iceConnectionState);
+          if (pc.iceConnectionState === 'connected') {
+            console.log('Successfully connected to peer!');
           }
         };
 
-        pc.ontrack = e => {
-          console.log('Received track from', userId);
-          webrtc.attachRemoteStream(userId, e.streams[0] || new MediaStream([e.track]));
+        pc.ontrack = (event) => {
+          console.log('Received track event:', event);
+          if (event.streams && event.streams.length > 0) {
+            console.log('Streams received:', event.streams);
+            webrtc.attachRemoteStream(userId, event.streams[0]);
+          }
         };
 
         pc.onnegotiationneeded = async () => {
