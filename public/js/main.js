@@ -28,7 +28,8 @@ window.addEventListener('DOMContentLoaded', () => {
       startX: 0,
       currentX: 0,
       target: null
-    }
+    },
+    callParticipants: [] // Added to store participant list
   };
 
   // DOM Elements
@@ -249,7 +250,7 @@ window.addEventListener('DOMContentLoaded', () => {
         };
 
         pc.onicecandidate = (event) => {
-          if (event.candidate) {
+          if (event.candidate && pc.localDescription) {
             debug.log(`Sending ICE candidate to ${userId}`);
             socket.emit('ice-candidate', {
               candidate: event.candidate,
@@ -261,7 +262,7 @@ window.addEventListener('DOMContentLoaded', () => {
         };
 
         pc.ontrack = (event) => {
-          debug.log(`Track event from ${userId}`);
+          debug.log(`Track event from ${userId}`, event);
           if (event.streams && event.streams.length > 0) {
             const stream = event.streams[0];
             state.remoteStreams[userId] = stream;
@@ -270,8 +271,10 @@ window.addEventListener('DOMContentLoaded', () => {
         };
 
         pc.onnegotiationneeded = async () => {
-          if (!state.isCallActive) return;
-          debug.log(`Negotiation needed for ${userId}`);
+          if (!state.isCallActive || state.makingOffer || pc.signalingState !== 'stable') {
+            debug.log(`Skipping negotiation for ${userId} (state: ${pc.signalingState}, makingOffer: ${state.makingOffer})`);
+            return;
+          }
           try {
             state.makingOffer = true;
             const offer = await pc.createOffer();
@@ -340,7 +343,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
       container.appendChild(video);
       container.appendChild(label);
-      document.getElementById('video-grid')?.appendChild(container);
+      const videoGrid = document.getElementById('video-grid');
+      if (videoGrid) videoGrid.appendChild(container);
 
       video.srcObject = stream;
       video.onloadedmetadata = () => {
@@ -368,7 +372,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
       if (state.localStream) {
         debug.log('Adding local tracks to peer connection');
-        state.localStream.getTracks().forEach(track => {
+        // Ensure consistent track order: audio first, then video
+        const audioTracks = state.localStream.getAudioTracks();
+        const videoTracks = state.localStream.getVideoTracks();
+        [...audioTracks, ...videoTracks].forEach(track => {
           try {
             pc.addTrack(track, state.localStream);
           } catch (err) {
@@ -388,7 +395,7 @@ window.addEventListener('DOMContentLoaded', () => {
       }
       delete state.iceQueues[state.currentCallId]?.[userId];
 
-      if (isInitiator) {
+      if (isInitiator && pc.signalingState === 'stable') {
         try {
           state.makingOffer = true;
           const offer = await pc.createOffer();
@@ -715,9 +722,12 @@ window.addEventListener('DOMContentLoaded', () => {
       state.iceQueues = {};
       state.isAudioMuted = false;
       state.isVideoOff = false;
+      state.callParticipants = [];
       callManager.hideCallUI();
 
-      socket.emit('end-call', { room, callId: state.currentCallId });
+      if (state.currentCallId) {
+        socket.emit('end-call', { room, callId: state.currentCallId });
+      }
     },
 
     toggleAudio: () => {
@@ -1041,7 +1051,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
       try {
         const pc = state.peerConnections[userId] || await webrtc.establishPeerConnection(userId);
-        if (pc && candidate) {
+        if (pc && pc.remoteDescription && candidate) {
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
           debug.log('Successfully added ICE candidate');
         } else {
@@ -1058,6 +1068,7 @@ window.addEventListener('DOMContentLoaded', () => {
     socket.on('call-participants', ({ participants, callId }) => {
       debug.log('Call participants:', participants);
       if (callId !== state.currentCallId) return;
+      state.callParticipants = participants;
 
       participants.forEach(async uid => {
         if (uid !== username && !state.peerConnections[uid]) {
@@ -1088,7 +1099,7 @@ window.addEventListener('DOMContentLoaded', () => {
     socket.on('user-joined-call', async ({ userId, callId }) => {
       debug.log(`User ${userId} joined call ${callId}`);
       if (callId !== state.currentCallId) return;
-      const init = state.currentCallType === 'caller' || participants.indexOf(username) < participants.indexOf(userId);
+      const init = state.callParticipants.indexOf(username) < state.callParticipants.indexOf(userId);
       await webrtc.establishPeerConnection(userId, init);
     });
 
@@ -1126,6 +1137,7 @@ window.addEventListener('DOMContentLoaded', () => {
       console.log('Local Stream:', state.localStream);
       console.log('Peer Connections:', state.peerConnections);
       console.log('Remote Streams:', state.remoteStreams);
+      console.log('Call Participants:', state.callParticipants);
       console.groupEnd();
     };
 
