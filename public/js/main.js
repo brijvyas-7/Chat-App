@@ -268,6 +268,8 @@ window.addEventListener('DOMContentLoaded', () => {
             const stream = event.streams[0];
             state.remoteStreams[userId] = stream;
             webrtc.attachRemoteStream(userId, stream);
+          } else {
+            debug.warn(`No streams in track event for ${userId}`);
           }
         };
 
@@ -327,7 +329,10 @@ window.addEventListener('DOMContentLoaded', () => {
       }
 
       const existing = document.getElementById(`remote-container-${userId}`);
-      if (existing) existing.remove();
+      if (existing) {
+        debug.log(`Removing existing video container for ${userId}`);
+        existing.remove();
+      }
 
       const container = document.createElement('div');
       container.className = 'video-container';
@@ -345,10 +350,16 @@ window.addEventListener('DOMContentLoaded', () => {
       container.appendChild(video);
       container.appendChild(label);
       const videoGrid = document.getElementById('video-grid');
-      if (videoGrid) videoGrid.appendChild(container);
+      if (videoGrid) {
+        videoGrid.appendChild(container);
+      } else {
+        debug.error('Video grid not found');
+        return;
+      }
 
       video.srcObject = stream;
       video.onloadedmetadata = () => {
+        debug.log(`Playing remote video for ${userId}`);
         video.play().catch(e => {
           debug.error('Video play failed:', e);
           webrtc.showVideoPlayButton(container, video);
@@ -417,7 +428,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
     addVideoElement: (type, userId, stream, isLocal = false) => {
       const g = document.getElementById('video-grid');
-      if (!g) return;
+      if (!g) {
+        debug.error('Video grid not found');
+        return;
+      }
 
       const existing = document.getElementById(`${type}-container-${userId}`);
       if (existing) existing.remove();
@@ -590,19 +604,12 @@ window.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      try {
-        const testStream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-          video: t === 'video' ? {
-            facingMode: 'user',
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          } : false
-        });
-        testStream.getTracks().forEach(track => track.stop());
-      } catch (err) {
-        debug.error('Media permission check failed:', err);
-        return alert(`Please allow ${t === 'video' ? 'camera and microphone' : 'microphone'} access.`);
+      // Check media permissions before starting the call
+      const hasPermissions = await checkMediaPermissions(t);
+      if (!hasPermissions) {
+        debug.error('Media permissions denied');
+        alert(`Please allow ${t === 'video' ? 'camera and microphone' : 'microphone'} access.`);
+        return;
       }
 
       state.isCallActive = true;
@@ -658,6 +665,14 @@ window.addEventListener('DOMContentLoaded', () => {
       if (state.isCallActive) {
         debug.warn('Already in a call, rejecting incoming call');
         socket.emit('reject-call', { room, callId, reason: 'busy' });
+        return;
+      }
+
+      // Check media permissions before accepting the call
+      const hasPermissions = await checkMediaPermissions(callType);
+      if (!hasPermissions) {
+        debug.error('Media permissions denied for incoming call');
+        socket.emit('reject-call', { room, callId, reason: 'media-failure' });
         return;
       }
 
@@ -817,6 +832,25 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  // Check Media Permissions
+  const checkMediaPermissions = async (callType) => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: callType === 'video' ? {
+          facingMode: 'user',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        } : false
+      });
+      stream.getTracks().forEach(track => track.stop()); // Stop tracks immediately to prevent camera staying on
+      return true;
+    } catch (err) {
+      debug.error('Media permission check failed:', err);
+      return false;
+    }
+  };
+
   // Event Listeners
   const setupEventListeners = () => {
     elements.cancelReplyBtn.addEventListener('click', e => {
@@ -944,14 +978,14 @@ window.addEventListener('DOMContentLoaded', () => {
         if (username && room) {
           socket.emit('joinRoom', { username, room });
           state.hasJoined = true;
-          // Removed automatic getCallState to prevent auto-rejoin
+          // Request call state after joining
+          socket.emit('getCallState');
         }
       }
     });
 
     socket.on('callState', ({ activeCalls, yourRooms }) => {
       debug.log('Received call state:', { activeCalls, yourRooms });
-      // Do not automatically rejoin calls
       if (state.isCallActive) return;
       const roomCalls = activeCalls[room];
       if (roomCalls) {
@@ -1122,7 +1156,7 @@ window.addEventListener('DOMContentLoaded', () => {
     });
 
     socket.on('call-accepted', async ({ userId, callId }) => {
-      debug.log(`✅ call-accepted from ${userId}`);
+      debug.log(`Call accepted by ${userId}`);
       if (callId !== state.currentCallId || !state.isCallActive) return;
       await webrtc.establishPeerConnection(userId, state.isCallInitiator);
     });
@@ -1161,12 +1195,15 @@ window.addEventListener('DOMContentLoaded', () => {
 
     socket.on('video-state', ({ userId, isVideoOff }) => {
       debug.log(`User ${userId} ${isVideoOff ? 'disabled' : 'enabled'} video`);
+      const video = document.getElementById(`remote-video-${userId}`);
+      if (video) {
+        video.style.opacity = isVideoOff ? '0.5' : '1';
+      }
     });
   };
 
   // Initialize Application
   const init = () => {
-    // Removed checkMediaPermissions from init to prevent auto camera
     if (!username || !room) {
       alert('Missing username or room!');
       window.location.href = '/';
@@ -1437,22 +1474,6 @@ window.addEventListener('DOMContentLoaded', () => {
     debug.log('Application initialization complete');
   };
 
-  // Check media permissions only when needed
-  const checkMediaPermissions = async (callType) => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: callType === 'video' ? { facingMode: 'user' } : false
-      });
-      stream.getTracks().forEach(track => track.stop());
-      debug.log('Media permissions granted for', callType);
-      return true;
-    } catch (err) {
-      debug.warn('Media permissions not granted:', err);
-      return false;
-    }
-  };
-
+  // Start the application
   init();
-
 });

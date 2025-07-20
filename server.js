@@ -38,7 +38,6 @@ const io = socketio(server, {
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
-
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 const botName = 'ChatApp Bot';
@@ -56,7 +55,7 @@ const log = (category, message, data = {}) => {
 const getCurrentUserByUsername = (username, room) => {
   return getCurrentUser(Object.values(io.sockets.sockets).find(s => {
     const user = getCurrentUser(s.id);
-    return user?.username === username && user?.room === room && s.connected;
+    return user?.username === username && user?.room === room;
   })?.id);
 };
 
@@ -64,7 +63,7 @@ const findUserSocket = (username, room) => {
   return Object.values(io.sockets.sockets).find(
     s => {
       const user = getCurrentUser(s.id);
-      return user?.username === username && user?.room === room && s.connected && user.lastActive > Date.now() - 60000;
+      return user?.username === username && user?.room === room && user.lastActive > Date.now() - 120000 && s.connected; // Increased timeout to 2 minutes, check socket connection
     }
   );
 };
@@ -84,8 +83,14 @@ const queueSignalingMessage = (event, data, retryCount = 0) => {
 const processSignalingQueue = () => {
   Object.entries(signalingQueue).forEach(([room, calls]) => {
     Object.entries(calls).forEach(([callId, messages]) => {
+      const call = activeCalls[room]?.[callId];
+      if (!call) {
+        log('SIGNALING', `Call ${callId} not found, clearing queue`, { room });
+        delete signalingQueue[room][callId];
+        return;
+      }
       messages.forEach(({ event, data, retryCount }, index) => {
-        if (retryCount >= 5 || Date.now() - data.timestamp > 15000) { // Increased retries and timeout
+        if (retryCount >= 10 || Date.now() - data.timestamp > 30000) { // Increased retries to 10, timeout to 30s
           log('SIGNALING', `Failed to deliver ${event} to ${data.targetUser} after ${retryCount} retries`, { callId });
           const senderSocket = findUserSocket(data.userId, room);
           if (senderSocket) {
@@ -96,7 +101,7 @@ const processSignalingQueue = () => {
         }
 
         const targetSocket = findUserSocket(data.targetUser, room);
-        if (targetSocket) {
+        if (targetSocket && call.participants.includes(data.targetUser)) {
           targetSocket.emit(event, data);
           log('SIGNALING', `Delivered queued ${event} to ${data.targetUser}`, { callId });
           messages.splice(index, 1);
@@ -167,6 +172,12 @@ io.on('connection', (socket) => {
     io.to(user.room).emit('roomUsers', {
       room: user.room,
       users: getRoomUsers(user.room)
+    });
+
+    // Send call state to the new user
+    socket.emit('callState', {
+      activeCalls,
+      yourRooms: Array.from(socket.rooms)
     });
   });
 
@@ -277,9 +288,9 @@ io.on('connection', (socket) => {
     }
 
     const call = activeCalls[room]?.[callId];
-    if (!call) {
-      log('ERROR', `Offer received for non-existent call ${callId}`);
-      socket.emit('error', `Call ${callId} not found`);
+    if (!call || !call.participants.includes(targetUser)) {
+      log('ERROR', `Offer for non-existent call ${callId} or target ${targetUser} not in call`);
+      socket.emit('error', `Call ${callId} or user ${targetUser} not found`);
       return;
     }
 
@@ -312,9 +323,9 @@ io.on('connection', (socket) => {
     }
 
     const call = activeCalls[room]?.[callId];
-    if (!call) {
-      log('ERROR', `Answer received for non-existent call ${callId}`);
-      socket.emit('error', `Call ${callId} not found`);
+    if (!call || !call.participants.includes(targetUser)) {
+      log('ERROR', `Answer for non-existent call ${callId} or target ${targetUser} not in call`);
+      socket.emit('error', `Call ${callId} or user ${targetUser} not found`);
       return;
     }
 
@@ -347,9 +358,9 @@ io.on('connection', (socket) => {
     }
 
     const call = activeCalls[room]?.[callId];
-    if (!call) {
-      log('ERROR', `ICE candidate for non-existent call ${callId}`);
-      socket.emit('error', `Call ${callId} not found`);
+    if (!call || !call.participants.includes(targetUser)) {
+      log('ERROR', `ICE candidate for non-existent call ${callId} or target ${targetUser} not in call`);
+      socket.emit('error', `Call ${callId} or user ${targetUser} not found`);
       return;
     }
 
