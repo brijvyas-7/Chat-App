@@ -1,61 +1,60 @@
-let users = [];
+const users = new Map();
 
 function userJoin(id, username, room) {
-  const user = { id, username, room, socketId: id, lastActive: Date.now(), connected: true };
-  const existingIndex = users.findIndex(u => u.username === username && u.room === room);
-  if (existingIndex !== -1) {
-    console.log(`[USER] Updating existing user: ${username} in room ${room}, new socketId: ${id}`);
-    users[existingIndex] = user;
-  } else {
-    console.log(`[USER] Adding new user: ${username} in room ${room}, socketId: ${id}`);
-    users.push(user);
-  }
-  return user;
+    const user = { id, username, room, lastActive: Date.now() };
+    users.set(id, user);
+    return user;
 }
 
 function getCurrentUser(id) {
-  const user = users.find(user => user.socketId === id);
-  if (user) user.lastActive = Date.now();
-  return user;
+    return users.get(id);
 }
 
 function getCurrentUserByUsername(username, room) {
-  const user = users.find(user => user.username === username && user.room === room);
-  if (user) user.lastActive = Date.now();
-  return user;
+    for (const user of users.values()) {
+        if (user.username === username && user.room === room) {
+            return user;
+        }
+    }
+    return null;
 }
 
 function userLeave(id) {
-  const index = users.findIndex(user => user.socketId === id);
-  if (index !== -1) {
-    const user = users.splice(index, 1)[0];
-    console.log(`[USER] Removed user: ${user.username}, socketId: ${id}`);
-    return user;
-  }
+    const user = users.get(id);
+    if (user) {
+        users.delete(id);
+        return user;
+    }
+    return null;
 }
 
 function getRoomUsers(room) {
-  return users.filter(user => user.room === room && user.lastActive > Date.now() - 120000).map(user => user.username);
+    const roomUsers = [];
+    for (const user of users.values()) {
+        if (user.room === room) {
+            roomUsers.push({ username: user.username, socketId: user.id, lastActive: user.lastActive });
+        }
+    }
+    return roomUsers;
 }
 
 function syncUsers(sockets) {
-  const removedUsers = [];
-  users.forEach((user, index) => {
-    const socket = sockets.get(user.socketId);
-    if (!socket || !socket.connected) {
-      user.connected = false;
-      if (user.lastActive < Date.now() - 120000) {
-        removedUsers.push(user);
-        users.splice(index, 1);
-      }
-    } else {
-      user.connected = true;
-      user.lastActive = Date.now();
+    const now = Date.now();
+    for (const [id, user] of users) {
+        const socket = sockets.get(id);
+        if (!socket || !socket.connected || now - user.lastActive > 120000) {
+            users.delete(id);
+        } else {
+            user.lastActive = now;
+        }
     }
-  });
-  if (removedUsers.length > 0) {
-    console.log(`[USER] Sync removed users: ${removedUsers.map(u => u.username).join(', ')}`);
-  }
 }
 
-module.exports = { userJoin, getCurrentUser, getCurrentUserByUsername, userLeave, getRoomUsers, syncUsers };
+module.exports = {
+    userJoin,
+    getCurrentUser,
+    getCurrentUserByUsername,
+    userLeave,
+    getRoomUsers,
+    syncUsers
+};

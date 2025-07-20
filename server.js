@@ -6,7 +6,7 @@ const socketio = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const formatMessage = require('./utils/messages');
-const { userJoin, getCurrentUser, userLeave, getRoomUsers, syncUsers } = require('./utils/users');
+const { userJoin, getCurrentUser, userLeave, getRoomUsers, syncUsers, getCurrentUserByUsername } = require('./utils/users');
 const messageStore = require('./utils/messageStore');
 
 const logger = winston.createLogger({
@@ -43,29 +43,27 @@ app.get('/favicon.ico', (req, res) => res.status(204).end());
 const botName = 'ChatApp Bot';
 const activeCalls = {};
 const signalingQueue = {};
+const cleanupLock = new Set(); // Prevent concurrent call cleanup
 
 const log = (category, message, data = {}) => {
-  const userState = getRoomUsers(data.room || '').map(username => {
-    const user = getCurrentUserByUsername(username, data.room);
-    return user ? `${username} (${user.socketId}, lastActive: ${new Date(user.lastActive).toISOString()})` : username;
-  }).join(', ');
+  const room = data.room || '';
+  const users = getRoomUsers(room);
+  const userState = users.map(user => `${user.username} (${user.socketId}, lastActive: ${new Date(user.lastActive).toISOString()})`).join(', ') || 'none';
   logger.info(`[${category}] ${message}`, { ...data, activeUsers: userState });
 };
 
-const getCurrentUserByUsername = (username, room) => {
-  return getCurrentUser(Object.values(io.sockets.sockets).find(s => {
-    const user = getCurrentUser(s.id);
-    return user?.username === username && user?.room === room;
-  })?.id);
-};
-
 const findUserSocket = (username, room) => {
-  return Object.values(io.sockets.sockets).find(
-    s => {
-      const user = getCurrentUser(s.id);
-      return user?.username === username && user?.room === room && user.lastActive > Date.now() - 120000 && s.connected; // Increased timeout to 2 minutes, check socket connection
-    }
-  );
+  const user = getCurrentUserByUsername(username, room);
+  if (!user) {
+    log('ERROR', `User ${username} not found in room ${room}`, { room });
+    return null;
+  }
+  const socket = io.sockets.sockets.get(user.id);
+  if (!socket || !socket.connected) {
+    log('ERROR', `Socket for user ${username} not connected`, { room, socketId: user.id });
+    return null;
+  }
+  return socket;
 };
 
 const queueSignalingMessage = (event, data, retryCount = 0) => {
@@ -90,11 +88,15 @@ const processSignalingQueue = () => {
         return;
       }
       messages.forEach(({ event, data, retryCount }, index) => {
-        if (retryCount >= 10 || Date.now() - data.timestamp > 30000) { // Increased retries to 10, timeout to 30s
+        if (retryCount >= 3 || Date.now() - data.timestamp > 15000) { // Reduced retries to 3, timeout to 15s
           log('SIGNALING', `Failed to deliver ${event} to ${data.targetUser} after ${retryCount} retries`, { callId });
           const senderSocket = findUserSocket(data.userId, room);
           if (senderSocket) {
             senderSocket.emit('error', `Failed to reach ${data.targetUser}`);
+            if (event === 'offer') {
+              io.to(room).emit('call-ended', { callId });
+              cleanupCall(room, callId);
+            }
           }
           messages.splice(index, 1);
           return;
@@ -131,13 +133,19 @@ const broadcastCallParticipants = (room, callId) => {
 };
 
 const cleanupCall = (room, callId) => {
-  if (activeCalls[room]?.[callId]) {
-    log('CALL', `Cleaning up call ${callId} in room ${room}`);
-    delete activeCalls[room][callId];
-    delete signalingQueue[room]?.[callId];
-    if (Object.keys(activeCalls[room]).length === 0) {
-      delete activeCalls[room];
+  if (cleanupLock.has(callId)) return; // Prevent concurrent cleanup
+  cleanupLock.add(callId);
+  try {
+    if (activeCalls[room]?.[callId]) {
+      log('CALL', `Cleaning up call ${callId} in room ${room}`);
+      delete activeCalls[room][callId];
+      delete signalingQueue[room]?.[callId];
+      if (Object.keys(activeCalls[room]).length === 0) {
+        delete activeCalls[room];
+      }
     }
+  } finally {
+    cleanupLock.delete(callId);
   }
 };
 
@@ -174,7 +182,6 @@ io.on('connection', (socket) => {
       users: getRoomUsers(user.room)
     });
 
-    // Send call state to the new user
     socket.emit('callState', {
       activeCalls,
       yourRooms: Array.from(socket.rooms)
@@ -413,8 +420,8 @@ io.on('connection', (socket) => {
 
     const call = activeCalls[room]?.[callId];
     if (!call) {
-      log('ERROR', `Call ${callId} not found in room ${room}`);
-      socket.emit('error', `Call ${callId} not found`);
+      log('INFO', `Call ${callId} not found in room ${room}, likely already ended`);
+      socket.emit('call-ended', { callId });
       return;
     }
 
@@ -432,8 +439,8 @@ io.on('connection', (socket) => {
 
     const call = activeCalls[room]?.[callId];
     if (!call) {
-      log('ERROR', `Call ${callId} not found in room ${room}`);
-      socket.emit('error', `Call ${callId} not found`);
+      log('INFO', `Call ${callId} not found in room ${room}, likely already ended`);
+      socket.emit('call-ended', { callId });
       return;
     }
 

@@ -30,7 +30,8 @@ window.addEventListener('DOMContentLoaded', () => {
       target: null
     },
     callParticipants: [],
-    isCallInitiator: false
+    isCallInitiator: false,
+    pendingSignaling: {} // Store pending signaling messages
   };
 
   // DOM Elements
@@ -112,6 +113,13 @@ window.addEventListener('DOMContentLoaded', () => {
       hours = hours % 12;
       hours = hours ? hours : 12;
       return `${hours}:${minutes} ${ampm}`;
+    },
+
+    // New utility to verify user presence
+    verifyUserPresence: (userId, callback) => {
+      socket.emit('check-user-presence', { room, userId }, (response) => {
+        callback(response.isPresent);
+      });
     }
   };
 
@@ -253,11 +261,20 @@ window.addEventListener('DOMContentLoaded', () => {
         pc.onicecandidate = (event) => {
           if (event.candidate && pc.localDescription) {
             debug.log(`Sending ICE candidate to ${userId}`);
-            socket.emit('ice-candidate', {
-              candidate: event.candidate,
-              room,
-              callId: state.currentCallId,
-              targetUser: userId
+            utils.verifyUserPresence(userId, (isPresent) => {
+              if (isPresent) {
+                socket.emit('ice-candidate', {
+                  candidate: event.candidate,
+                  room,
+                  callId: state.currentCallId,
+                  targetUser: userId
+                });
+              } else {
+                debug.warn(`User ${userId} not present, queuing ICE candidate`);
+                state.iceQueues[state.currentCallId] = state.iceQueues[state.currentCallId] || {};
+                state.iceQueues[state.currentCallId][userId] = state.iceQueues[state.currentCallId][userId] || [];
+                state.iceQueues[state.currentCallId][userId].push(event.candidate);
+              }
             });
           }
         };
@@ -282,11 +299,19 @@ window.addEventListener('DOMContentLoaded', () => {
             state.makingOffer = true;
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
-            socket.emit('offer', {
-              offer: pc.localDescription,
-              room,
-              callId: state.currentCallId,
-              targetUser: userId
+            utils.verifyUserPresence(userId, (isPresent) => {
+              if (isPresent) {
+                socket.emit('offer', {
+                  offer: pc.localDescription,
+                  room,
+                  callId: state.currentCallId,
+                  targetUser: userId
+                });
+              } else {
+                debug.warn(`User ${userId} not present, queuing offer`);
+                state.pendingSignaling[userId] = state.pendingSignaling[userId] || [];
+                state.pendingSignaling[userId].push({ type: 'offer', data: pc.localDescription });
+              }
             });
           } catch (err) {
             debug.error('Error during negotiation:', err);
@@ -310,11 +335,19 @@ window.addEventListener('DOMContentLoaded', () => {
         debug.log(`Restarting ICE for ${userId}`);
         const offer = await pc.createOffer({ iceRestart: true });
         await pc.setLocalDescription(offer);
-        socket.emit('offer', {
-          offer: pc.localDescription,
-          room,
-          callId: state.currentCallId,
-          targetUser: userId
+        utils.verifyUserPresence(userId, (isPresent) => {
+          if (isPresent) {
+            socket.emit('offer', {
+              offer: pc.localDescription,
+              room,
+              callId: state.currentCallId,
+              targetUser: userId
+            });
+          } else {
+            debug.warn(`User ${userId} not present, queuing ICE restart offer`);
+            state.pendingSignaling[userId] = state.pendingSignaling[userId] || [];
+            state.pendingSignaling[userId].push({ type: 'offer', data: pc.localDescription });
+          }
         });
       } catch (err) {
         debug.error('Error restarting ICE:', err);
@@ -395,6 +428,7 @@ window.addEventListener('DOMContentLoaded', () => {
         });
       }
 
+      // Process queued ICE candidates
       const queue = (state.iceQueues[state.currentCallId] || {})[userId] || [];
       debug.log(`Processing ${queue.length} queued ICE candidates for ${userId}`);
       for (const candidate of queue) {
@@ -406,16 +440,40 @@ window.addEventListener('DOMContentLoaded', () => {
       }
       delete state.iceQueues[state.currentCallId]?.[userId];
 
+      // Process pending signaling messages
+      if (state.pendingSignaling[userId]) {
+        debug.log(`Processing ${state.pendingSignaling[userId].length} pending signaling messages for ${userId}`);
+        for (const msg of state.pendingSignaling[userId]) {
+          if (msg.type === 'offer') {
+            socket.emit('offer', {
+              offer: msg.data,
+              room,
+              callId: state.currentCallId,
+              targetUser: userId
+            });
+          }
+        }
+        delete state.pendingSignaling[userId];
+      }
+
       if ((isInitiator || state.isCallInitiator) && pc.signalingState === 'stable') {
         try {
           state.makingOffer = true;
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
-          socket.emit('offer', {
-            offer: pc.localDescription,
-            room,
-            callId: state.currentCallId,
-            targetUser: userId
+          utils.verifyUserPresence(userId, (isPresent) => {
+            if (isPresent) {
+              socket.emit('offer', {
+                offer: pc.localDescription,
+                room,
+                callId: state.currentCallId,
+                targetUser: userId
+              });
+            } else {
+              debug.warn(`User ${userId} not present, queuing offer`);
+              state.pendingSignaling[userId] = state.pendingSignaling[userId] || [];
+              state.pendingSignaling[userId].push({ type: 'offer', data: pc.localDescription });
+            }
           });
         } catch (err) {
           debug.error('Error creating offer:', err);
@@ -506,6 +564,7 @@ window.addEventListener('DOMContentLoaded', () => {
       if (ac) ac.remove();
 
       delete state.remoteStreams[userId];
+      delete state.pendingSignaling[userId];
     }
   };
 
@@ -604,7 +663,6 @@ window.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      // Check media permissions before starting the call
       const hasPermissions = await checkMediaPermissions(t);
       if (!hasPermissions) {
         debug.error('Media permissions denied');
@@ -668,7 +726,6 @@ window.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      // Check media permissions before accepting the call
       const hasPermissions = await checkMediaPermissions(callType);
       if (!hasPermissions) {
         debug.error('Media permissions denied for incoming call');
@@ -747,6 +804,7 @@ window.addEventListener('DOMContentLoaded', () => {
       state.currentCallId = null;
       state.currentCallType = null;
       state.iceQueues = {};
+      state.pendingSignaling = {};
       state.isAudioMuted = false;
       state.isVideoOff = false;
       state.callParticipants = [];
@@ -843,7 +901,7 @@ window.addEventListener('DOMContentLoaded', () => {
           height: { ideal: 720 }
         } : false
       });
-      stream.getTracks().forEach(track => track.stop()); // Stop tracks immediately to prevent camera staying on
+      stream.getTracks().forEach(track => track.stop());
       return true;
     } catch (err) {
       debug.error('Media permission check failed:', err);
@@ -978,7 +1036,6 @@ window.addEventListener('DOMContentLoaded', () => {
         if (username && room) {
           socket.emit('joinRoom', { username, room });
           state.hasJoined = true;
-          // Request call state after joining
           socket.emit('getCallState');
         }
       }
@@ -1150,7 +1207,13 @@ window.addEventListener('DOMContentLoaded', () => {
       participants.forEach(async uid => {
         if (uid !== username && !state.peerConnections[uid]) {
           const init = state.isCallInitiator || participants.indexOf(username) < participants.indexOf(uid);
-          await webrtc.establishPeerConnection(uid, init);
+          utils.verifyUserPresence(uid, async (isPresent) => {
+            if (isPresent) {
+              await webrtc.establishPeerConnection(uid, init);
+            } else {
+              debug.warn(`User ${uid} not present in room, skipping connection`);
+            }
+          });
         }
       });
     });
@@ -1158,7 +1221,13 @@ window.addEventListener('DOMContentLoaded', () => {
     socket.on('call-accepted', async ({ userId, callId }) => {
       debug.log(`Call accepted by ${userId}`);
       if (callId !== state.currentCallId || !state.isCallActive) return;
-      await webrtc.establishPeerConnection(userId, state.isCallInitiator);
+      utils.verifyUserPresence(userId, async (isPresent) => {
+        if (isPresent) {
+          await webrtc.establishPeerConnection(userId, state.isCallInitiator);
+        } else {
+          debug.warn(`User ${userId} not present, cannot establish connection`);
+        }
+      });
     });
 
     socket.on('reject-call', ({ userId, callId, reason }) => {
@@ -1176,8 +1245,14 @@ window.addEventListener('DOMContentLoaded', () => {
     socket.on('user-joined-call', async ({ userId, callId }) => {
       debug.log(`User ${userId} joined call ${callId}`);
       if (callId !== state.currentCallId) return;
-      const init = state.isCallInitiator || state.callParticipants.indexOf(username) < state.callParticipants.indexOf(userId);
-      await webrtc.establishPeerConnection(userId, init);
+      utils.verifyUserPresence(userId, async (isPresent) => {
+        if (isPresent) {
+          const init = state.isCallInitiator || state.callParticipants.indexOf(username) < state.callParticipants.indexOf(userId);
+          await webrtc.establishPeerConnection(userId, init);
+        } else {
+          debug.warn(`User ${userId} not present, skipping connection`);
+        }
+      });
     });
 
     socket.on('user-left-call', ({ userId, callId }) => {
@@ -1220,6 +1295,7 @@ window.addEventListener('DOMContentLoaded', () => {
       console.log('Remote Streams:', state.remoteStreams);
       console.log('Call Participants:', state.callParticipants);
       console.log('Is Call Initiator:', state.isCallInitiator);
+      console.log('Pending Signaling:', state.pendingSignaling);
       console.groupEnd();
     };
 
