@@ -643,11 +643,10 @@ window.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      const ok = confirm(`${caller} is calling (${callType}). Accept?`);
-      if (!ok) {
-        socket.emit('reject-call', { room, callId });
-        return;
-      }
+      // TEMP DEBUG: auto‑accept
+      debug.log('📣 Auto‑accepting the call now');
+      socket.emit('accept-call', { room, callId });
+
 
       state.isCallActive = true;
       state.currentCallType = callType;
@@ -973,7 +972,11 @@ window.addEventListener('DOMContentLoaded', () => {
       document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
     });
 
-    socket.on('incoming-call', callManager.handleIncomingCall);
+    socket.on('incoming-call', (call) => {
+      debug.log('📩 ➡️ incoming-call event received:', call);
+      callManager.handleIncomingCall(call);
+    });
+
 
     socket.on('offer', async ({ offer, userId, callId }) => {
       debug.log(`Received offer from ${userId}`);
