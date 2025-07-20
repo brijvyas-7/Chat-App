@@ -5,7 +5,7 @@ const { v4: uuidv4 } = require('uuid');
 const winston = require('winston');
 const DailyRotateFile = require('winston-daily-rotate-file');
 const { format } = require('winston');
-const { userJoin, getCurrentUser, userLeave, getRoomUsers, syncUsers } = require('./utils/users');
+const { userJoin, getCurrentUser, getCurrentUserByUsername, userLeave, getRoomUsers, syncUsers } = require('./utils/users');
 const { formatMessage } = require('./utils/messages');
 const { addMessage, getMessages } = require('./utils/messageStore');
 
@@ -47,6 +47,7 @@ const log = (category, message, data = {}) => {
 
 let activeCalls = {};
 const signalingQueue = {};
+let users = []; // Ensure users is accessible for logging
 
 const findUserSocket = (username, room) => {
   const socket = Object.values(io.sockets.sockets).find(s => {
@@ -134,7 +135,7 @@ io.on('connection', socket => {
       log('SIGNALING', `Forwarding offer from ${user.username} to ${target}`, { callId });
     } else {
       signalingQueue[callId] = signalingQueue[callId] || [];
-      signalingQueue[callId].push({ type: 'offer', target, data: { offer, caller: user.username }, retryCount: 0 });
+      signalingQueue[callId].push({ type: 'offer', target, data: { offer, caller: user.username }, retryCount: 0, room });
       log('SIGNALING', `Target user ${target} not found in room ${room}, queuing offer`, { callId });
     }
   });
@@ -148,7 +149,7 @@ io.on('connection', socket => {
       log('SIGNALING', `Forwarding answer from ${user.username} to ${target}`, { callId });
     } else {
       signalingQueue[callId] = signalingQueue[callId] || [];
-      signalingQueue[callId].push({ type: 'answer', target, data: { answer, caller: user.username }, retryCount: 0 });
+      signalingQueue[callId].push({ type: 'answer', target, data: { answer, caller: user.username }, retryCount: 0, room });
       log('SIGNALING', `Target user ${target} not found in room ${room}, queuing answer`, { callId });
     }
   });
@@ -162,7 +163,7 @@ io.on('connection', socket => {
       log('SIGNALING', `Forwarding ice-candidate from ${user.username} to ${target}`, { callId });
     } else {
       signalingQueue[callId] = signalingQueue[callId] || [];
-      signalingQueue[callId].push({ type: 'ice-candidate', target, data: { candidate, caller: user.username }, retryCount: 0 });
+      signalingQueue[callId].push({ type: 'ice-candidate', target, data: { candidate, caller: user.username }, retryCount: 0, room });
       log('SIGNALING', `Target user ${target} not found in room ${room}, queuing ICE candidate`, { callId });
     }
   });
@@ -196,8 +197,8 @@ setInterval(() => {
   Object.keys(signalingQueue).forEach(callId => {
     signalingQueue[callId] = signalingQueue[callId].filter(item => item.retryCount < 3);
     signalingQueue[callId].forEach(item => {
-      const { type, target, data, retryCount } = item;
-      const targetSocket = findUserSocket(target, data.room || Object.keys(activeCalls).find(room => activeCalls[room][callId]));
+      const { type, target, data, retryCount, room } = item;
+      const targetSocket = findUserSocket(target, room);
       if (targetSocket) {
         targetSocket.emit(type, { ...data, callId });
         signalingQueue[callId] = signalingQueue[callId].filter(i => i !== item);
