@@ -8,6 +8,7 @@ const path = require('path');
 const formatMessage = require('./utils/messages');
 const { userJoin, getCurrentUser, userLeave, getRoomUsers, syncUsers } = require('./utils/users');
 const messageStore = require('./utils/messageStore');
+
 const logger = winston.createLogger({
   level: 'info',
   format: winston.format.combine(
@@ -38,14 +39,12 @@ const io = socketio(server, {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Handle favicon.ico requests to avoid 404 errors
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 const botName = 'ChatApp Bot';
 const activeCalls = {};
 const signalingQueue = {};
 
-// Enhanced logging with timestamps and user state
 const log = (category, message, data = {}) => {
   const userState = getRoomUsers(data.room || '').map(username => {
     const user = getCurrentUserByUsername(username, data.room);
@@ -54,7 +53,6 @@ const log = (category, message, data = {}) => {
   logger.info(`[${category}] ${message}`, { ...data, activeUsers: userState });
 };
 
-// Utility to find user by username (for logging)
 const getCurrentUserByUsername = (username, room) => {
   return getCurrentUser(Object.values(io.sockets.sockets).find(s => {
     const user = getCurrentUser(s.id);
@@ -62,7 +60,6 @@ const getCurrentUserByUsername = (username, room) => {
   })?.id);
 };
 
-// Utility function to find user socket by username and room
 const findUserSocket = (username, room) => {
   return Object.values(io.sockets.sockets).find(
     s => {
@@ -72,7 +69,6 @@ const findUserSocket = (username, room) => {
   );
 };
 
-// Queue signaling messages for retry
 const queueSignalingMessage = (event, data, retryCount = 0) => {
   const { room, callId, targetUser } = data;
   if (!callId) {
@@ -85,12 +81,11 @@ const queueSignalingMessage = (event, data, retryCount = 0) => {
   log('SIGNALING', `Queued ${event} for ${targetUser} in call ${callId} (room: ${room})`, { retryCount });
 };
 
-// Process queued signaling messages
 const processSignalingQueue = () => {
   Object.entries(signalingQueue).forEach(([room, calls]) => {
     Object.entries(calls).forEach(([callId, messages]) => {
       messages.forEach(({ event, data, retryCount }, index) => {
-        if (retryCount >= 3 || Date.now() - data.timestamp > 10000) {
+        if (retryCount >= 5 || Date.now() - data.timestamp > 15000) { // Increased retries and timeout
           log('SIGNALING', `Failed to deliver ${event} to ${data.targetUser} after ${retryCount} retries`, { callId });
           const senderSocket = findUserSocket(data.userId, room);
           if (senderSocket) {
@@ -120,7 +115,6 @@ const processSignalingQueue = () => {
   });
 };
 
-// Broadcast call participants to all clients in the room
 const broadcastCallParticipants = (room, callId) => {
   const call = activeCalls[room]?.[callId];
   if (!call) return;
@@ -131,7 +125,6 @@ const broadcastCallParticipants = (room, callId) => {
   log('CALL', `Broadcasted participants for call ${callId} in room ${room}`, { participants: call.participants });
 };
 
-// Cleanup call data
 const cleanupCall = (room, callId) => {
   if (activeCalls[room]?.[callId]) {
     log('CALL', `Cleaning up call ${callId} in room ${room}`);
@@ -143,7 +136,6 @@ const cleanupCall = (room, callId) => {
   }
 };
 
-// Periodically sync users and process signaling queue
 setInterval(() => {
   syncUsers(io.sockets.sockets);
   processSignalingQueue();

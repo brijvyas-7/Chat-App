@@ -30,7 +30,7 @@ window.addEventListener('DOMContentLoaded', () => {
       target: null
     },
     callParticipants: [],
-    isCallInitiator: false // Track if this client initiated the call
+    isCallInitiator: false
   };
 
   // DOM Elements
@@ -609,7 +609,7 @@ window.addEventListener('DOMContentLoaded', () => {
       state.currentCallType = t;
       state.currentCallId = utils.generateId();
       state.iceQueues[state.currentCallId] = {};
-      state.isCallInitiator = true; // Mark this client as the initiator
+      state.isCallInitiator = true;
 
       callManager.showCallingUI(t);
 
@@ -669,7 +669,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
       state.isCallActive = true;
       state.currentCallType = callType;
-      state.currentCallId = callId; // Set callId first
+      state.currentCallId = callId;
       state.iceQueues[callId] = {};
       state.isCallInitiator = false;
 
@@ -944,23 +944,30 @@ window.addEventListener('DOMContentLoaded', () => {
         if (username && room) {
           socket.emit('joinRoom', { username, room });
           state.hasJoined = true;
-          socket.emit('getCallState'); // Check for active calls
+          // Removed automatic getCallState to prevent auto-rejoin
         }
       }
     });
+
     socket.on('callState', ({ activeCalls, yourRooms }) => {
       debug.log('Received call state:', { activeCalls, yourRooms });
+      // Do not automatically rejoin calls
       if (state.isCallActive) return;
       const roomCalls = activeCalls[room];
       if (roomCalls) {
         const call = Object.values(roomCalls).find(c => c.participants.includes(username));
         if (call) {
-          debug.log('Rejoining active call:', call.callId);
-          state.currentCallId = call.callId;
-          state.currentCallType = call.callType;
-          state.isCallActive = true;
-          state.isCallInitiator = false;
-          callManager.handleIncomingCall({ callType: call.callType, callId: call.callId, caller: call.participants[0] });
+          debug.log('Active call found, prompting user:', call.callId);
+          const ok = confirm(`There is an active ${call.callType} call in ${room}. Rejoin?`);
+          if (ok) {
+            state.currentCallId = call.callId;
+            state.currentCallType = call.callType;
+            state.isCallActive = true;
+            state.isCallInitiator = false;
+            callManager.handleIncomingCall({ callType: call.callType, callId: call.callId, caller: call.participants[0] });
+          } else {
+            socket.emit('reject-call', { room, callId: call.callId, reason: 'rejected' });
+          }
         }
       }
     });
@@ -1159,7 +1166,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Initialize Application
   const init = () => {
-    checkMediaPermissions();
+    // Removed checkMediaPermissions from init to prevent auto camera
     if (!username || !room) {
       alert('Missing username or room!');
       window.location.href = '/';
@@ -1196,14 +1203,14 @@ window.addEventListener('DOMContentLoaded', () => {
         height: calc(100% - 80px);
         overflow-y: auto;
       }
-     .video-container {
-  position: relative;
-  background: #000;
-  border-radius: 8px;
-  overflow: hidden;
-  width: 100%;
-  aspect-ratio: 16/9;
-}
+      .video-container {
+        position: relative;
+        background: #000;
+        border-radius: 8px;
+        overflow: hidden;
+        width: 100%;
+        aspect-ratio: 16/9;
+      }
       .video-container video {
         width: 100%;
         height: 100%;
@@ -1429,14 +1436,20 @@ window.addEventListener('DOMContentLoaded', () => {
     setupSocketHandlers();
     debug.log('Application initialization complete');
   };
-  const checkMediaPermissions = async () => {
+
+  // Check media permissions only when needed
+  const checkMediaPermissions = async (callType) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: callType === 'video' ? { facingMode: 'user' } : false
+      });
       stream.getTracks().forEach(track => track.stop());
-      debug.log('Media permissions granted');
+      debug.log('Media permissions granted for', callType);
+      return true;
     } catch (err) {
       debug.warn('Media permissions not granted:', err);
-      alert('Please allow camera and microphone access for full functionality.');
+      return false;
     }
   };
 
