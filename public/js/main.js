@@ -707,37 +707,37 @@ window.addEventListener('DOMContentLoaded', () => {
     },
 
     endCall: () => {
-  if (!state.isCallActive) return;
-  if (!state.currentCallId) {
-    debug.error('Attempted to end call with null callId');
-    return;
-  }
+      if (!state.isCallActive) return;
+      if (!state.currentCallId) {
+        debug.error('Attempted to end call with null callId');
+        return;
+      }
 
-  debug.log('Ending call and cleaning up resources');
-  clearTimeout(state.callTimeout);
+      debug.log('Ending call and cleaning up resources');
+      clearTimeout(state.callTimeout);
 
-  Object.keys(state.peerConnections).forEach(userId => {
-    webrtc.removePeerConnection(userId);
-  });
-  state.peerConnections = {};
+      Object.keys(state.peerConnections).forEach(userId => {
+        webrtc.removePeerConnection(userId);
+      });
+      state.peerConnections = {};
 
-  if (state.localStream) {
-    state.localStream.getTracks().forEach(track => track.stop());
-    state.localStream = null;
-  }
+      if (state.localStream) {
+        state.localStream.getTracks().forEach(track => track.stop());
+        state.localStream = null;
+      }
 
-  socket.emit('end-call', { room, callId: state.currentCallId });
+      socket.emit('end-call', { room, callId: state.currentCallId });
 
-  state.isCallActive = false;
-  state.currentCallId = null;
-  state.currentCallType = null;
-  state.iceQueues = {};
-  state.isAudioMuted = false;
-  state.isVideoOff = false;
-  state.callParticipants = [];
-  state.isCallInitiator = false;
-  callManager.hideCallUI();
-},
+      state.isCallActive = false;
+      state.currentCallId = null;
+      state.currentCallType = null;
+      state.iceQueues = {};
+      state.isAudioMuted = false;
+      state.isVideoOff = false;
+      state.callParticipants = [];
+      state.isCallInitiator = false;
+      callManager.hideCallUI();
+    },
 
     toggleAudio: () => {
       state.isAudioMuted = !state.isAudioMuted;
@@ -930,11 +930,38 @@ window.addEventListener('DOMContentLoaded', () => {
   // Socket.IO Handlers
   const setupSocketHandlers = () => {
     socket.on('connect', () => {
-      state.reconnectAttempts = 0;
+      debug.log('Socket connected');
       utils.updateConnectionStatus({ text: 'Connected', type: 'connected' });
+      state.reconnectAttempts = 0;
+      if (state.isCallActive) {
+        callManager.endCall();
+        callManager.showCallEndedUI('Reconnected, call ended');
+      }
       if (!state.hasJoined) {
-        socket.emit('joinRoom', { username, room });
-        state.hasJoined = true;
+        const urlParams = new URLSearchParams(window.location.search);
+        const username = urlParams.get('username');
+        const room = urlParams.get('room');
+        if (username && room) {
+          socket.emit('joinRoom', { username, room });
+          state.hasJoined = true;
+          socket.emit('getCallState'); // Check for active calls
+        }
+      }
+    });
+    socket.on('callState', ({ activeCalls, yourRooms }) => {
+      debug.log('Received call state:', { activeCalls, yourRooms });
+      if (state.isCallActive) return;
+      const roomCalls = activeCalls[room];
+      if (roomCalls) {
+        const call = Object.values(roomCalls).find(c => c.participants.includes(username));
+        if (call) {
+          debug.log('Rejoining active call:', call.callId);
+          state.currentCallId = call.callId;
+          state.currentCallType = call.callType;
+          state.isCallActive = true;
+          state.isCallInitiator = false;
+          callManager.handleIncomingCall({ callType: call.callType, callId: call.callId, caller: call.participants[0] });
+        }
       }
     });
 
@@ -1132,6 +1159,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Initialize Application
   const init = () => {
+    checkMediaPermissions();
     if (!username || !room) {
       alert('Missing username or room!');
       window.location.href = '/';
@@ -1168,13 +1196,14 @@ window.addEventListener('DOMContentLoaded', () => {
         height: calc(100% - 80px);
         overflow-y: auto;
       }
-      .video-container {
-        position: relative;
-        background: #000;
-        border-radius: 8px;
-        overflow: hidden;
-        aspect-ratio: 4/3;
-      }
+     .video-container {
+  position: relative;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  width: 100%;
+  aspect-ratio: 16/9;
+}
       .video-container video {
         width: 100%;
         height: 100%;
@@ -1400,6 +1429,17 @@ window.addEventListener('DOMContentLoaded', () => {
     setupSocketHandlers();
     debug.log('Application initialization complete');
   };
+  const checkMediaPermissions = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      stream.getTracks().forEach(track => track.stop());
+      debug.log('Media permissions granted');
+    } catch (err) {
+      debug.warn('Media permissions not granted:', err);
+      alert('Please allow camera and microphone access for full functionality.');
+    }
+  };
 
   init();
+
 });
