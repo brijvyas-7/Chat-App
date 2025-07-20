@@ -1020,8 +1020,6 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-
-
     socket.on('ice-candidate', async ({ candidate, userId, callId }) => {
       debug.log(`Received ICE candidate from ${userId}`);
 
@@ -1173,5 +1171,3 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // Start the application
     init();
-  }
-});
