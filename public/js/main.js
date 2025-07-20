@@ -1,4 +1,4 @@
-// Complete Chat Application with Video Calling
+// Complete Chat Application with Video Calling (Fixed Version)
 window.addEventListener('DOMContentLoaded', () => {
   // State Management
   const state = {
@@ -21,7 +21,9 @@ window.addEventListener('DOMContentLoaded', () => {
     touchEndX: 0,
     SWIPE_THRESHOLD: 60,
     MAX_RECONNECT_ATTEMPTS: 5,
-    reconnectAttempts: 0
+    reconnectAttempts: 0,
+    makingOffer: false, // Added for negotiation control
+    ignoreOffer: false // Added for offer collision handling
   };
 
   // DOM Elements
@@ -172,8 +174,19 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  // WebRTC Functions
+  // WebRTC Functions (Fixed Version)
   const webrtc = {
+    createPeerConnection: () => {
+      return new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ],
+        sdpSemantics: 'unified-plan', // Critical fix
+        bundlePolicy: 'max-bundle'
+      });
+    },
+
     addLocalTracks: async (pc, stream) => {
       for (const t of stream.getTracks()) {
         try {
@@ -236,20 +249,13 @@ window.addEventListener('DOMContentLoaded', () => {
       if (!state.isCallActive || state.peerConnections[userId]) return;
 
       try {
-        const pc = new RTCPeerConnection({
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' }
-          ]
-        });
+        const pc = webrtc.createPeerConnection();
         state.peerConnections[userId] = pc;
 
-        // In your establishPeerConnection function:
         pc.oniceconnectionstatechange = () => {
           console.log('ICE connection state:', pc.iceConnectionState);
-          if (pc.iceConnectionState === 'connected') {
-            console.log('Successfully connected to peer!');
+          if (['disconnected', 'failed'].includes(pc.iceConnectionState)) {
+            webrtc.removePeerConnection(userId);
           }
         };
 
@@ -263,8 +269,12 @@ window.addEventListener('DOMContentLoaded', () => {
 
         pc.onnegotiationneeded = async () => {
           try {
-            console.log('Negotiation needed for', userId);
-            await pc.setLocalDescription(await pc.createOffer());
+            if (state.makingOffer) return;
+            state.makingOffer = true;
+            
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            
             socket.emit('offer', {
               offer: pc.localDescription,
               room,
@@ -273,6 +283,8 @@ window.addEventListener('DOMContentLoaded', () => {
             });
           } catch (err) {
             console.error('Negotiation error:', err);
+          } finally {
+            state.makingOffer = false;
           }
         };
 
@@ -311,17 +323,7 @@ window.addEventListener('DOMContentLoaded', () => {
         if (state.iceQueues[state.currentCallId]) state.iceQueues[state.currentCallId][userId] = [];
 
         if (isInitiator) {
-          try {
-            await pc.setLocalDescription(await pc.createOffer());
-            socket.emit('offer', {
-              offer: pc.localDescription,
-              room,
-              callId: state.currentCallId,
-              targetUser: userId
-            });
-          } catch (err) {
-            console.error('Error creating initial offer:', err);
-          }
+          pc.onnegotiationneeded(); // Trigger initial offer
         }
       } catch (err) {
         console.error('Error establishing peer connection:', err);
@@ -796,7 +798,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }, { once: true });
   };
 
-  // Socket.IO Handlers
+  // Socket.IO Handlers (Fixed Version)
   const setupSocketHandlers = () => {
     socket.on('connect', () => {
       state.reconnectAttempts = 0;
@@ -858,28 +860,37 @@ window.addEventListener('DOMContentLoaded', () => {
     socket.on('offer', async ({ offer, userId, callId }) => {
       if (callId !== state.currentCallId || !state.isCallActive) return;
 
+      const pc = state.peerConnections[userId] || await webrtc.establishPeerConnection(userId);
+      
       try {
-        await webrtc.establishPeerConnection(userId);
-        const pc = state.peerConnections[userId];
-        await pc.setRemoteDescription(offer);
-        const ans = await pc.createAnswer();
-        await pc.setLocalDescription(ans);
+        const offerCollision = (offer.type === 'offer') && 
+          (state.makingOffer || pc.signalingState !== 'stable');
+        
+        state.ignoreOffer = !state.isCallActive && offerCollision;
+        if (state.ignoreOffer) return;
 
-        socket.emit('answer', {
-          answer: ans,
-          room,
-          callId,
-          targetUser: userId
-        });
+        await pc.setRemoteDescription(offer);
+        if (offer.type === 'offer') {
+          await pc.setLocalDescription(await pc.createAnswer());
+          socket.emit('answer', {
+            answer: pc.localDescription,
+            room,
+            callId,
+            targetUser: userId
+          });
+        }
       } catch (err) {
         console.error('Offer handling failed:', err);
       }
     });
 
-    socket.on('answer', ({ answer, userId, callId }) => {
+    socket.on('answer', async ({ answer, userId, callId }) => {
       if (callId !== state.currentCallId) return;
+      const pc = state.peerConnections[userId];
+      if (!pc) return;
+
       try {
-        state.peerConnections[userId]?.setRemoteDescription(answer);
+        await pc.setRemoteDescription(answer);
       } catch (err) {
         console.error('Answer handling failed:', err);
       }
