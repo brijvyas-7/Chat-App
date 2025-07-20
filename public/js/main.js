@@ -637,16 +637,16 @@ window.addEventListener('DOMContentLoaded', () => {
     },
 
     handleIncomingCall: async ({ callType, callId, caller }) => {
-      debug.log('📞 incoming-call handler fired for', caller, 'callId', callId);
       if (state.isCallActive) {
         socket.emit('reject-call', { room, callId, reason: 'busy' });
         return;
       }
 
-      // TEMP DEBUG: auto‑accept
-      debug.log('📣 Auto‑accepting the call now');
-      socket.emit('accept-call', { room, callId });
-
+      const ok = confirm(`${caller} is calling (${callType}). Accept?`);
+      if (!ok) {
+        socket.emit('reject-call', { room, callId });
+        return;
+      }
 
       state.isCallActive = true;
       state.currentCallType = callType;
@@ -972,11 +972,7 @@ window.addEventListener('DOMContentLoaded', () => {
       document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
     });
 
-    socket.on('incoming-call', (call) => {
-      debug.log('📩 ➡️ incoming-call event received:', call);
-      callManager.handleIncomingCall(call);
-    });
-
+    socket.on('incoming-call', callManager.handleIncomingCall);
 
     socket.on('offer', async ({ offer, userId, callId }) => {
       debug.log(`Received offer from ${userId}`);
@@ -1054,7 +1050,7 @@ window.addEventListener('DOMContentLoaded', () => {
     socket.on('accept-call', async ({ userId, callId }) => {
       debug.log(`${userId} accepted call`);
       if (callId !== state.currentCallId || !state.isCallActive) return;
-      await webrtc.establishPeerConnection(userId, false);
+      await webrtc.establishPeerConnection(userId, true);
     });
 
     socket.on('end-call', () => {
