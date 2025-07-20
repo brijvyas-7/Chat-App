@@ -1,11 +1,28 @@
+const winston = require('winston');
+const DailyRotateFile = require('winston-daily-rotate-file');
 const express = require('express');
 const http = require('http');
 const socketio = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const formatMessage = require('./utils/messages');
-const { userJoin, getCurrentUser, userLeave, getRoomUsers } = require('./utils/users');
+const { userJoin, getCurrentUser, userLeave, getRoomUsers, syncUsers } = require('./utils/users');
 const messageStore = require('./utils/messageStore');
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.Console(),
+    new DailyRotateFile({
+      filename: 'logs/app-%DATE%.log',
+      datePattern: 'YYYY-MM-DD',
+      maxFiles: '14d'
+    })
+  ]
+});
 
 const app = express();
 const server = http.createServer(app);
@@ -28,9 +45,21 @@ const botName = 'ChatApp Bot';
 const activeCalls = {};
 const signalingQueue = {};
 
-// Enhanced logging with timestamps
+// Enhanced logging with timestamps and user state
 const log = (category, message, data = {}) => {
-  console.log(`[${new Date().toISOString()}] [${category}] ${message}`, data);
+  const userState = getRoomUsers(data.room || '').map(username => {
+    const user = getCurrentUserByUsername(username, data.room);
+    return user ? `${username} (${user.socketId}, lastActive: ${new Date(user.lastActive).toISOString()})` : username;
+  }).join(', ');
+  logger.info(`[${category}] ${message}`, { ...data, activeUsers: userState });
+};
+
+// Utility to find user by username (for logging)
+const getCurrentUserByUsername = (username, room) => {
+  return getCurrentUser(Object.values(io.sockets.sockets).find(s => {
+    const user = getCurrentUser(s.id);
+    return user?.username === username && user?.room === room && s.connected;
+  })?.id);
 };
 
 // Utility function to find user socket by username and room
@@ -38,7 +67,7 @@ const findUserSocket = (username, room) => {
   return Object.values(io.sockets.sockets).find(
     s => {
       const user = getCurrentUser(s.id);
-      return user?.username === username && user?.room === room && s.connected;
+      return user?.username === username && user?.room === room && s.connected && user.lastActive > Date.now() - 60000;
     }
   );
 };
@@ -46,6 +75,10 @@ const findUserSocket = (username, room) => {
 // Queue signaling messages for retry
 const queueSignalingMessage = (event, data, retryCount = 0) => {
   const { room, callId, targetUser } = data;
+  if (!callId) {
+    log('ERROR', `Invalid callId in ${event} queue attempt`, { targetUser, room });
+    return;
+  }
   signalingQueue[room] = signalingQueue[room] || {};
   signalingQueue[room][callId] = signalingQueue[room][callId] || [];
   signalingQueue[room][callId].push({ event, data, retryCount, timestamp: Date.now() });
@@ -110,8 +143,9 @@ const cleanupCall = (room, callId) => {
   }
 };
 
-// Periodically process signaling queue (no syncUsers since it’s not in utils/users.js)
+// Periodically sync users and process signaling queue
 setInterval(() => {
+  syncUsers(io.sockets.sockets);
   processSignalingQueue();
 }, 1000);
 
@@ -129,7 +163,7 @@ io.on('connection', (socket) => {
     socket.join(user.room);
 
     log('ROOM', `${username} joined room ${room}`, { socketId: socket.id });
-    
+
     const welcomeMsg = formatMessage(botName, 'Welcome to ChatApp!');
     messageStore.addMessage(room, welcomeMsg);
     socket.emit('message', welcomeMsg);
@@ -184,27 +218,33 @@ io.on('connection', (socket) => {
     };
 
     log('CALL', `Call initiated by ${caller} in ${room} (${callType})`, { callId });
-    
+
     Object.keys(activeCalls[room]).forEach(id => {
       if (id !== callId && Date.now() - activeCalls[room][id].timestamp > 3600000) {
         cleanupCall(room, id);
       }
     });
 
-    socket.to(room).emit('incoming-call', { 
-      callId, 
-      callType, 
-      caller 
+    socket.to(room).emit('incoming-call', {
+      callId,
+      callType,
+      caller
     });
 
     broadcastCallParticipants(room, callId);
   });
 
   socket.on('call-accepted', ({ room, callId }) => {
+    if (!callId) {
+      log('ERROR', 'Invalid callId in call-accepted', { room, socketId: socket.id });
+      socket.emit('error', 'Invalid call ID');
+      return;
+    }
+
     const call = activeCalls[room]?.[callId];
     if (!call) {
       log('ERROR', `Call ${callId} not found in room ${room}`);
-      socket.emit('error', 'Call not found');
+      socket.emit('error', `Call ${callId} not found`);
       return;
     }
 
@@ -220,8 +260,8 @@ io.on('connection', (socket) => {
     }
 
     log('CALL', `Call accepted by ${user.username} in ${room}`, { callId });
-    
-    io.to(room).emit('user-joined-call', { 
+
+    io.to(room).emit('user-joined-call', {
       userId: user.username,
       callId
     });
@@ -230,14 +270,20 @@ io.on('connection', (socket) => {
 
     const callerSocket = findUserSocket(call.participants[0], room);
     if (callerSocket) {
-      callerSocket.emit('call-accepted', { 
+      callerSocket.emit('call-accepted', {
         callId,
-        userId: user.username 
+        userId: user.username
       });
     }
   });
 
   socket.on('offer', ({ offer, room, callId, targetUser, userId }) => {
+    if (!callId) {
+      log('ERROR', 'Invalid callId in offer', { room, targetUser, userId });
+      socket.emit('error', 'Invalid call ID');
+      return;
+    }
+
     const call = activeCalls[room]?.[callId];
     if (!call) {
       log('ERROR', `Offer received for non-existent call ${callId}`);
@@ -247,7 +293,7 @@ io.on('connection', (socket) => {
 
     const sender = getCurrentUser(socket.id);
     if (!sender || !call.participants.includes(sender.username)) {
-      log('ERROR', `Unauthorized offer from ${sender?.username}`);
+      log('ERROR', `Unauthorized offer from ${sender?.username || 'unknown'}`, { socketId: socket.id });
       socket.emit('error', 'Unauthorized offer');
       return;
     }
@@ -255,10 +301,10 @@ io.on('connection', (socket) => {
     const targetSocket = findUserSocket(targetUser, room);
     if (targetSocket) {
       log('SIGNALING', `Forwarding offer from ${sender.username} to ${targetUser}`, { callId });
-      targetSocket.emit('offer', { 
-        offer, 
-        callId, 
-        userId: sender.username 
+      targetSocket.emit('offer', {
+        offer,
+        callId,
+        userId: sender.username
       });
     } else {
       log('SIGNALING', `Target user ${targetUser} not found in room ${room}, queuing offer`, { callId });
@@ -267,6 +313,12 @@ io.on('connection', (socket) => {
   });
 
   socket.on('answer', ({ answer, room, callId, targetUser, userId }) => {
+    if (!callId) {
+      log('ERROR', 'Invalid callId in answer', { room, targetUser, userId });
+      socket.emit('error', 'Invalid call ID');
+      return;
+    }
+
     const call = activeCalls[room]?.[callId];
     if (!call) {
       log('ERROR', `Answer received for non-existent call ${callId}`);
@@ -276,7 +328,7 @@ io.on('connection', (socket) => {
 
     const sender = getCurrentUser(socket.id);
     if (!sender || !call.participants.includes(sender.username)) {
-      log('ERROR', `Unauthorized answer from ${sender?.username}`);
+      log('ERROR', `Unauthorized answer from ${sender?.username || 'unknown'}`, { socketId: socket.id });
       socket.emit('error', 'Unauthorized answer');
       return;
     }
@@ -284,8 +336,8 @@ io.on('connection', (socket) => {
     const targetSocket = findUserSocket(targetUser, room);
     if (targetSocket) {
       log('SIGNALING', `Forwarding answer from ${sender.username} to ${targetUser}`, { callId });
-      targetSocket.emit('answer', { 
-        answer, 
+      targetSocket.emit('answer', {
+        answer,
         callId,
         userId: sender.username
       });
@@ -296,6 +348,12 @@ io.on('connection', (socket) => {
   });
 
   socket.on('ice-candidate', ({ candidate, room, callId, targetUser, userId }) => {
+    if (!callId) {
+      log('ERROR', 'Invalid callId in ice-candidate', { room, targetUser, userId });
+      socket.emit('error', 'Invalid call ID');
+      return;
+    }
+
     const call = activeCalls[room]?.[callId];
     if (!call) {
       log('ERROR', `ICE candidate for non-existent call ${callId}`);
@@ -305,7 +363,7 @@ io.on('connection', (socket) => {
 
     const sender = getCurrentUser(socket.id);
     if (!sender || !call.participants.includes(sender.username)) {
-      log('ERROR', `Unauthorized ICE candidate from ${sender?.username}`);
+      log('ERROR', `Unauthorized ICE candidate from ${sender?.username || 'unknown'}`, { socketId: socket.id });
       socket.emit('error', 'Unauthorized ICE candidate');
       return;
     }
@@ -313,8 +371,8 @@ io.on('connection', (socket) => {
     const targetSocket = findUserSocket(targetUser, room);
     if (targetSocket) {
       log('SIGNALING', `Forwarding ICE candidate from ${sender.username} to ${targetUser}`, { callId });
-      targetSocket.emit('ice-candidate', { 
-        candidate, 
+      targetSocket.emit('ice-candidate', {
+        candidate,
         callId,
         userId: sender.username
       });
@@ -325,6 +383,12 @@ io.on('connection', (socket) => {
   });
 
   socket.on('get-call-participants', ({ room, callId }) => {
+    if (!callId) {
+      log('ERROR', 'Invalid callId in get-call-participants', { room });
+      socket.emit('error', 'Invalid call ID');
+      return;
+    }
+
     const call = activeCalls[room]?.[callId];
     if (!call) {
       log('ERROR', `Call ${callId} not found`, { room });
@@ -338,6 +402,12 @@ io.on('connection', (socket) => {
   });
 
   socket.on('end-call', ({ room, callId }) => {
+    if (!callId) {
+      log('ERROR', 'Invalid callId in end-call', { room });
+      socket.emit('error', 'Invalid call ID');
+      return;
+    }
+
     const call = activeCalls[room]?.[callId];
     if (!call) {
       log('ERROR', `Call ${callId} not found in room ${room}`);
@@ -351,17 +421,30 @@ io.on('connection', (socket) => {
   });
 
   socket.on('reject-call', ({ room, callId, reason }) => {
+    if (!callId) {
+      log('ERROR', 'Invalid callId in reject-call', { room });
+      socket.emit('error', 'Invalid call ID');
+      return;
+    }
+
     const call = activeCalls[room]?.[callId];
-    if (!call) return;
+    if (!call) {
+      log('ERROR', `Call ${callId} not found in room ${room}`);
+      socket.emit('error', `Call ${callId} not found`);
+      return;
+    }
 
     const user = getCurrentUser(socket.id);
-    if (!user) return;
+    if (!user) {
+      log('ERROR', 'User not identified for reject-call', { socketId: socket.id });
+      return;
+    }
 
     log('CALL', `Call ${callId} rejected by ${user.username}: ${reason}`);
-    
+
     const callerSocket = findUserSocket(call.participants[0], room);
     if (callerSocket) {
-      callerSocket.emit('reject-call', { 
+      callerSocket.emit('reject-call', {
         callId,
         userId: user.username,
         reason
@@ -374,11 +457,21 @@ io.on('connection', (socket) => {
   });
 
   socket.on('mute-state', ({ room, callId, isAudioMuted, userId }) => {
+    if (!callId) {
+      log('ERROR', 'Invalid callId in mute-state', { room, userId });
+      socket.emit('error', 'Invalid call ID');
+      return;
+    }
     io.to(room).emit('mute-state', { userId, isAudioMuted });
     log('CALL', `Mute state updated for ${userId} in call ${callId}`, { isAudioMuted });
   });
 
   socket.on('video-state', ({ room, callId, isVideoOff, userId }) => {
+    if (!callId) {
+      log('ERROR', 'Invalid callId in video-state', { room, userId });
+      socket.emit('error', 'Invalid call ID');
+      return;
+    }
     io.to(room).emit('video-state', { userId, isVideoOff });
     log('CALL', `Video state updated for ${userId} in call ${callId}`, { isVideoOff });
   });
