@@ -651,6 +651,10 @@ window.addEventListener('DOMContentLoaded', () => {
     },
 
     handleIncomingCall: async ({ callType, callId, caller }) => {
+      if (!callId) {
+        debug.error('Received incoming call with null callId', { callType, caller });
+        return;
+      }
       if (state.isCallActive) {
         debug.warn('Already in a call, rejecting incoming call');
         socket.emit('reject-call', { room, callId, reason: 'busy' });
@@ -665,9 +669,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
       state.isCallActive = true;
       state.currentCallType = callType;
-      state.currentCallId = callId;
+      state.currentCallId = callId; // Set callId first
       state.iceQueues[callId] = {};
-      state.isCallInitiator = false; // Not the initiator
+      state.isCallInitiator = false;
 
       try {
         state.localStream = await navigator.mediaDevices.getUserMedia({
@@ -703,35 +707,37 @@ window.addEventListener('DOMContentLoaded', () => {
     },
 
     endCall: () => {
-      if (!state.isCallActive) return;
+  if (!state.isCallActive) return;
+  if (!state.currentCallId) {
+    debug.error('Attempted to end call with null callId');
+    return;
+  }
 
-      debug.log('Ending call and cleaning up resources');
-      clearTimeout(state.callTimeout);
+  debug.log('Ending call and cleaning up resources');
+  clearTimeout(state.callTimeout);
 
-      Object.keys(state.peerConnections).forEach(userId => {
-        webrtc.removePeerConnection(userId);
-      });
-      state.peerConnections = {};
+  Object.keys(state.peerConnections).forEach(userId => {
+    webrtc.removePeerConnection(userId);
+  });
+  state.peerConnections = {};
 
-      if (state.localStream) {
-        state.localStream.getTracks().forEach(track => track.stop());
-        state.localStream = null;
-      }
+  if (state.localStream) {
+    state.localStream.getTracks().forEach(track => track.stop());
+    state.localStream = null;
+  }
 
-      state.isCallActive = false;
-      state.currentCallId = null;
-      state.currentCallType = null;
-      state.iceQueues = {};
-      state.isAudioMuted = false;
-      state.isVideoOff = false;
-      state.callParticipants = [];
-      state.isCallInitiator = false;
-      callManager.hideCallUI();
+  socket.emit('end-call', { room, callId: state.currentCallId });
 
-      if (state.currentCallId) {
-        socket.emit('end-call', { room, callId: state.currentCallId });
-      }
-    },
+  state.isCallActive = false;
+  state.currentCallId = null;
+  state.currentCallType = null;
+  state.iceQueues = {};
+  state.isAudioMuted = false;
+  state.isVideoOff = false;
+  state.callParticipants = [];
+  state.isCallInitiator = false;
+  callManager.hideCallUI();
+},
 
     toggleAudio: () => {
       state.isAudioMuted = !state.isAudioMuted;
