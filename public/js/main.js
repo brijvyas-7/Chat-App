@@ -637,6 +637,7 @@ window.addEventListener('DOMContentLoaded', () => {
     },
 
     handleIncomingCall: async ({ callType, callId, caller }) => {
+      debug.log('📞 incoming-call handler fired for', caller, 'callId', callId);
       if (state.isCallActive) {
         socket.emit('reject-call', { room, callId, reason: 'busy' });
         return;
@@ -1050,7 +1051,7 @@ window.addEventListener('DOMContentLoaded', () => {
     socket.on('accept-call', async ({ userId, callId }) => {
       debug.log(`${userId} accepted call`);
       if (callId !== state.currentCallId || !state.isCallActive) return;
-      await webrtc.establishPeerConnection(userId, true);
+      await webrtc.establishPeerConnection(userId, false);
     });
 
     socket.on('end-call', () => {
