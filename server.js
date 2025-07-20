@@ -121,7 +121,7 @@ io.on('connection', (socket) => {
       s => getCurrentUser(s.id)?.username === call.participants[0]
     );
     if (callerSocket) {
-      callerSocket.emit('call-accepted', { 
+      callerSocket.emit('accept-call', { 
         callId,
         userId: user.username 
       });
