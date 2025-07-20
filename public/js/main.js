@@ -1048,10 +1048,12 @@ window.addEventListener('DOMContentLoaded', () => {
     });
 
     socket.on('accept-call', async ({ userId, callId }) => {
-      debug.log(`${userId} accepted call`);
+      debug.log(`✅ accept-call from ${userId}`);
       if (callId !== state.currentCallId || !state.isCallActive) return;
+      // CORRECT: caller now initiates the WebRTC handshake
       await webrtc.establishPeerConnection(userId, true);
     });
+
 
     socket.on('end-call', () => {
       debug.log('Call ended by remote peer');
