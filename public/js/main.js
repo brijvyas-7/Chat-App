@@ -110,7 +110,7 @@ window.addEventListener('DOMContentLoaded', () => {
     addMessage: (msg) => {
       debug.log('Adding message:', msg);
       document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
-      
+
       const el = document.createElement('div');
       const isMe = msg.username === username;
       const isSys = msg.username === 'ChatApp Bot';
@@ -192,7 +192,7 @@ window.addEventListener('DOMContentLoaded', () => {
         socket.emit('typing', { username, room });
         state.lastTypingUpdate = now;
       }
-      
+
       clearTimeout(state.typingTimeout);
       state.typingTimeout = setTimeout(() => {
         socket.emit('stopTyping', { username, room });
@@ -335,7 +335,7 @@ window.addEventListener('DOMContentLoaded', () => {
           state.makingOffer = true;
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
-          
+
           socket.emit('offer', {
             offer: pc.localDescription,
             room,
@@ -367,8 +367,9 @@ window.addEventListener('DOMContentLoaded', () => {
       video.playsInline = true;
       video.muted = isLocal;
 
-      if (isLocal && state.currentCallType === 'video') {
-        video.style.transform = 'scaleX(-1)';
+      // In the webrtc.addVideoElement function or similar:
+      if (isLocal) {
+        video.style.transform = state.currentFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
       }
 
       const label = document.createElement('div');
@@ -498,7 +499,7 @@ window.addEventListener('DOMContentLoaded', () => {
             <i class="fas fa-video${state.isVideoOff ? '-slash' : ''}"></i>
           </button>
           <button id="flip-camera-btn" class="control-btn flip-btn">
-            <i class="fas fa-camera-retro"></i>
+            <i class="fas fa-code"></i>
           </button>
         `;
       }
@@ -581,7 +582,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
         debug.log('Local stream tracks:', state.localStream.getTracks());
         callManager.showCallUI(t);
-        
+
         socket.emit('call-initiate', {
           room,
           callId: state.currentCallId,
@@ -714,13 +715,19 @@ window.addEventListener('DOMContentLoaded', () => {
         state.localStream.getTracks().forEach(t => state.localStream.removeTrack(t));
         ns.getTracks().forEach(t => state.localStream.addTrack(t));
 
+        // Update mirror effect based on camera type
+        const lv = document.getElementById(`local-video-${username}`);
+        if (lv) {
+          lv.srcObject = state.localStream;
+          // Mirror only for front camera (user), not for rear camera (environment)
+          lv.style.transform = state.currentFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+        }
+
         Object.values(state.peerConnections).forEach(pc => {
           const s = pc.getSenders().find(x => x.track?.kind === 'video');
           if (s) s.replaceTrack(state.localStream.getVideoTracks()[0]);
         });
 
-        const lv = document.getElementById(`local-video-${username}`);
-        if (lv) lv.srcObject = state.localStream;
       } catch (e) {
         debug.error('Camera flip failed:', e);
       }
@@ -788,12 +795,12 @@ window.addEventListener('DOMContentLoaded', () => {
       if (!txt) return;
 
       debug.log('Sending message:', txt);
-      socket.emit('chatMessage', { 
-        text: txt, 
-        replyTo: state.replyTo, 
-        room 
+      socket.emit('chatMessage', {
+        text: txt,
+        replyTo: state.replyTo,
+        room
       });
-      
+
       elements.msgInput.value = '';
       state.replyTo = null;
       elements.replyPreview.classList.add('d-none');
@@ -897,11 +904,11 @@ window.addEventListener('DOMContentLoaded', () => {
       if (callId !== state.currentCallId || !state.isCallActive) return;
 
       const pc = state.peerConnections[userId] || await webrtc.establishPeerConnection(userId);
-      
+
       try {
-        const offerCollision = (offer.type === 'offer') && 
+        const offerCollision = (offer.type === 'offer') &&
           (state.makingOffer || pc.signalingState !== 'stable');
-        
+
         state.ignoreOffer = !state.isCallActive && offerCollision;
         if (state.ignoreOffer) return;
 
