@@ -31,7 +31,8 @@ window.addEventListener('DOMContentLoaded', () => {
     },
     callParticipants: [],
     isCallInitiator: false,
-    pendingSignaling: {} // Store pending signaling messages
+    pendingSignaling: {}, // Store pending signaling messages
+    polite: true // Polite peer flag for offer/answer collision
   };
 
   // DOM Elements
@@ -115,7 +116,6 @@ window.addEventListener('DOMContentLoaded', () => {
       return `${hours}:${minutes} ${ampm}`;
     },
 
-    // New utility to verify user presence
     verifyUserPresence: (userId, callback) => {
       socket.emit('check-user-presence', { room, userId }, (response) => {
         callback(response.isPresent);
@@ -226,7 +226,12 @@ window.addEventListener('DOMContentLoaded', () => {
           iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' }
+            { urls: 'stun:stun2.l.google.com:19302' },
+            {
+              urls: 'turn:turn.example.com:3478', // Replace with actual TURN server
+              username: 'username',
+              credential: 'password'
+            }
           ],
           iceTransportPolicy: 'all',
           bundlePolicy: 'max-bundle',
@@ -235,7 +240,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
         pc.onconnectionstatechange = () => {
           debug.log(`${userId} connection state: ${pc.connectionState}`);
-          if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+          if (['failed', 'disconnected'].includes(pc.connectionState)) {
             webrtc.removePeerConnection(userId);
             if (Object.keys(state.peerConnections).length === 0 && state.isCallActive) {
               callManager.endCall();
@@ -267,7 +272,8 @@ window.addEventListener('DOMContentLoaded', () => {
                   candidate: event.candidate,
                   room,
                   callId: state.currentCallId,
-                  targetUser: userId
+                  targetUser: userId,
+                  userId: username
                 });
               } else {
                 debug.warn(`User ${userId} not present, queuing ICE candidate`);
@@ -285,6 +291,7 @@ window.addEventListener('DOMContentLoaded', () => {
             const stream = event.streams[0];
             state.remoteStreams[userId] = stream;
             webrtc.attachRemoteStream(userId, stream);
+            debug.log(`Attached remote stream for ${userId}`, stream.getTracks());
           } else {
             debug.warn(`No streams in track event for ${userId}`);
           }
@@ -305,7 +312,8 @@ window.addEventListener('DOMContentLoaded', () => {
                   offer: pc.localDescription,
                   room,
                   callId: state.currentCallId,
-                  targetUser: userId
+                  targetUser: userId,
+                  userId: username
                 });
               } else {
                 debug.warn(`User ${userId} not present, queuing offer`);
@@ -341,7 +349,8 @@ window.addEventListener('DOMContentLoaded', () => {
               offer: pc.localDescription,
               room,
               callId: state.currentCallId,
-              targetUser: userId
+              targetUser: userId,
+              userId: username
             });
           } else {
             debug.warn(`User ${userId} not present, queuing ICE restart offer`);
@@ -433,12 +442,18 @@ window.addEventListener('DOMContentLoaded', () => {
       debug.log(`Processing ${queue.length} queued ICE candidates for ${userId}`);
       for (const candidate of queue) {
         try {
-          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          if (pc.remoteDescription) {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          } else {
+            debug.warn(`Remote description not set, keeping ICE candidate in queue for ${userId}`);
+          }
         } catch (err) {
           debug.error('Error adding ICE candidate:', err);
         }
       }
-      delete state.iceQueues[state.currentCallId]?.[userId];
+      if (pc.remoteDescription) {
+        delete state.iceQueues[state.currentCallId]?.[userId];
+      }
 
       // Process pending signaling messages
       if (state.pendingSignaling[userId]) {
@@ -449,7 +464,8 @@ window.addEventListener('DOMContentLoaded', () => {
               offer: msg.data,
               room,
               callId: state.currentCallId,
-              targetUser: userId
+              targetUser: userId,
+              userId: username
             });
           }
         }
@@ -467,7 +483,8 @@ window.addEventListener('DOMContentLoaded', () => {
                 offer: pc.localDescription,
                 room,
                 callId: state.currentCallId,
-                targetUser: userId
+                targetUser: userId,
+                userId: username
               });
             } else {
               debug.warn(`User ${userId} not present, queuing offer`);
@@ -675,6 +692,7 @@ window.addEventListener('DOMContentLoaded', () => {
       state.currentCallId = utils.generateId();
       state.iceQueues[state.currentCallId] = {};
       state.isCallInitiator = true;
+      state.polite = true;
 
       callManager.showCallingUI(t);
 
@@ -707,7 +725,7 @@ window.addEventListener('DOMContentLoaded', () => {
             callManager.endCall();
             callManager.showCallEndedUI('No one answered');
           }
-        }, 45000);
+        }, 60000); // Extended to 60 seconds
       } catch (err) {
         debug.error('Call start failed:', err);
         callManager.endCall();
@@ -744,6 +762,7 @@ window.addEventListener('DOMContentLoaded', () => {
       state.currentCallId = callId;
       state.iceQueues[callId] = {};
       state.isCallInitiator = false;
+      state.polite = false;
 
       try {
         state.localStream = await navigator.mediaDevices.getUserMedia({
@@ -769,7 +788,7 @@ window.addEventListener('DOMContentLoaded', () => {
             callManager.endCall();
             callManager.showCallEndedUI('Failed to establish connection');
           }
-        }, 30000);
+        }, 60000); // Extended to 60 seconds
       } catch (e) {
         debug.error('Media access failed:', e);
         callManager.endCall();
@@ -809,6 +828,7 @@ window.addEventListener('DOMContentLoaded', () => {
       state.isVideoOff = false;
       state.callParticipants = [];
       state.isCallInitiator = false;
+      state.polite = true;
       callManager.hideCallUI();
     },
 
@@ -1055,6 +1075,7 @@ window.addEventListener('DOMContentLoaded', () => {
             state.currentCallType = call.callType;
             state.isCallActive = true;
             state.isCallInitiator = false;
+            state.polite = false;
             callManager.handleIncomingCall({ callType: call.callType, callId: call.callId, caller: call.participants[0] });
           } else {
             socket.emit('reject-call', { room, callId: call.callId, reason: 'rejected' });
@@ -1136,8 +1157,10 @@ window.addEventListener('DOMContentLoaded', () => {
         const offerCollision = (offer.type === 'offer') &&
           (state.makingOffer || pc.signalingState !== 'stable');
 
-        if (offerCollision) {
-          debug.warn(`Offer collision detected for ${userId}`);
+        state.ignoreOffer = !state.polite && offerCollision;
+
+        if (state.ignoreOffer) {
+          debug.warn(`Ignoring offer from ${userId} due to collision`);
           return;
         }
 
@@ -1149,9 +1172,22 @@ window.addEventListener('DOMContentLoaded', () => {
             answer: pc.localDescription,
             room,
             callId,
-            targetUser: userId
+            targetUser: userId,
+            userId: username
           });
         }
+
+        // Process any queued ICE candidates
+        const queue = (state.iceQueues[state.currentCallId] || {})[userId] || [];
+        for (const candidate of queue) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            debug.log(`Applied queued ICE candidate for ${userId}`);
+          } catch (err) {
+            debug.error('Error adding queued ICE candidate:', err);
+          }
+        }
+        delete state.iceQueues[state.currentCallId]?.[userId];
       } catch (err) {
         debug.error('Offer handling failed:', err);
       }
@@ -1171,6 +1207,17 @@ window.addEventListener('DOMContentLoaded', () => {
 
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        // Process any queued ICE candidates
+        const queue = (state.iceQueues[state.currentCallId] || {})[userId] || [];
+        for (const candidate of queue) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            debug.log(`Applied queued ICE candidate for ${userId}`);
+          } catch (err) {
+            debug.error('Error adding queued ICE candidate:', err);
+          }
+        }
+        delete state.iceQueues[state.currentCallId]?.[userId];
       } catch (err) {
         debug.error('Answer handling failed:', err);
       }
