@@ -254,7 +254,7 @@ io.on('connection', (socket) => {
   socket.on('answer', ({ answer, room, callId, targetUser, userId }) => {
     const call = activeCalls[room]?.[callId];
     if (!call) {
-      console.error(`Answer received for non-existent call ${callId}`);
+      console.error(`Answer received for non_ROLE: assistant: existent call ${callId}`);
       socket.emit('error', `Call ${callId} not found`);
       return;
     }
@@ -407,5 +407,5 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
