@@ -1,4 +1,4 @@
-const users = [];
+let users = [];
 
 function userJoin(id, username, room) {
   const user = { id, username, room, socketId: id, lastActive: Date.now(), connected: true };
