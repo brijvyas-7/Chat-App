@@ -20,16 +20,22 @@ async function establishPeerConnection(userId, isInitiator = false) {
   };
 
   pc.ontrack = (event) => {
-    if (event.streams.length) {
-      const stream = event.streams[0];
-      remoteStreams[userId] = stream;
-      if (currentCallType === 'video') {
-        addVideoElement('remote', userId, stream);
-      } else {
-        addAudioElement(userId);
-      }
+    // Try to grab the stream; if none exists, build one from the track
+    let stream = event.streams[0];
+    if (!stream) {
+      stream = new MediaStream();
+      stream.addTrack(event.track);
+    }
+
+    remoteStreams[userId] = stream;
+
+    if (currentCallType === 'video') {
+      addVideoElement('remote', userId, stream);
+    } else {
+      addAudioElement(userId);
     }
   };
+
 
   pc.onnegotiationneeded = async () => {
     console.log('🔁 negotiationneeded');
@@ -47,23 +53,15 @@ async function establishPeerConnection(userId, isInitiator = false) {
   };
 
   // 1️⃣ Add local tracks *before* negotiation
-  if (localStream) await addLocalTracks(pc, localStream);
+if (localStream) await addLocalTracks(pc, localStream);
 
-  // 2️⃣ If initiator, trigger negotiation
-  if (isInitiator) {
-    try {
-      await pc.setLocalDescription(await pc.createOffer());
-      socket.emit('offer', {
-        offer: pc.localDescription,
-        room,
-        callId: currentCallId,
-        targetUser: userId
-      });
-    } catch (err) {
-      console.error('Offer error:', err);
-      cleanupPeer(userId);
-    }
-  }
+// 2️⃣ If initiator, trigger negotiation
+if (isInitiator) {
+  try {
+    await pc.setLocalDescription(await pc.createOffer());
+    socket.emit('offer', { /* … */ });
+  } catch (err) { /* … */ }
+}
 
   pc.onicecandidate = (e) => {
     if (e.candidate) {
