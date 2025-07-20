@@ -201,244 +201,546 @@ window.addEventListener('DOMContentLoaded', () => {
   };
 
   // WebRTC Functions
- // Enhanced WebRTC connection handling
-const webrtc = {
+  const webrtc = {
     createPeerConnection: (userId) => {
-        debug.log(`Creating peer connection for ${userId}`);
-        try {
-            const pc = new RTCPeerConnection({
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { 
-                        urls: 'turn:your-turn-server.com', // Add your TURN server here
-                        username: 'username',
-                        credential: 'password'
-                    }
-                ],
-                iceTransportPolicy: 'all',
-                bundlePolicy: 'max-bundle',
-                rtcpMuxPolicy: 'require',
-                iceCandidatePoolSize: 25 // Increased candidate pool
-            });
-
-            // Enhanced state tracking
-            pc.onconnectionstatechange = () => {
-                debug.log(`${userId} connection state: ${pc.connectionState}`);
-                if (pc.connectionState === 'connected') {
-                    debug.log('Successfully connected to peer!');
-                    clearTimeout(state.connectionTimeout); // Clear connection timeout
-                } else if (pc.connectionState === 'failed') {
-                    debug.error(`Connection failed with ${userId}`);
-                    webrtc.removePeerConnection(userId);
-                    callManager.retryConnection(userId);
-                }
-            };
-
-            // More robust ICE handling
-            pc.onicecandidate = (event) => {
-                if (event.candidate) {
-                    debug.log(`Sending ICE candidate to ${userId}:`, event.candidate);
-                    socket.emit('ice-candidate', {
-                        candidate: event.candidate,
-                        room,
-                        callId: state.currentCallId,
-                        targetUser: userId
-                    });
-                } else {
-                    debug.log(`All ICE candidates gathered for ${userId}`);
-                    // Start timeout only after all candidates are gathered
-                    state.connectionTimeout = setTimeout(() => {
-                        if (pc.iceConnectionState !== 'connected') {
-                            debug.error('ICE connection timed out');
-                            callManager.retryConnection(userId);
-                        }
-                    }, 30000); // 30 second timeout
-                }
-            };
-
-            // Track handling with retries
-            pc.ontrack = (event) => {
-                debug.log(`Track event from ${userId}`);
-                if (!event.streams || event.streams.length === 0) {
-                    debug.error(`No streams in track event - retrying...`);
-                    setTimeout(() => {
-                        if (state.peerConnections[userId]) {
-                            pc.addTransceiver('audio', { direction: 'recvonly' });
-                            pc.addTransceiver('video', { direction: 'recvonly' });
-                        }
-                    }, 1000);
-                    return;
-                }
-
-                const stream = event.streams.find(s => s.getVideoTracks().length > 0) || event.streams[0];
-                webrtc.attachRemoteStream(userId, stream);
-            };
-
-            return pc;
-        } catch (error) {
-            debug.error(`Failed to create peer connection:`, error);
-            return null;
-        }
-    },
-
-    // [Rest of your WebRTC functions...]
-};
-
-// Enhanced Call Manager
-const callManager = {
-    startCall: async (t) => {
-        debug.log(`Starting ${t} call with enhanced connection handling`);
-        
-        try {
-            // Pre-call connectivity check
-            const connectivityCheck = await fetch('https://network-test.com/test', { mode: 'no-cors' })
-                .catch(() => debug.warn('Network connectivity check failed'));
-
-            state.isCallActive = true;
-            state.currentCallType = t;
-            state.currentCallId = utils.generateId();
-            state.iceQueues[state.currentCallId] = {};
-
-            // Get media stream with timeout
-            const mediaPromise = navigator.mediaDevices.getUserMedia({
-                audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true
-                },
-                video: t === 'video' ? {
-                    facingMode: 'user',
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
-                } : false
-            });
-
-            const timeoutPromise = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Media acquisition timeout')), 10000)
-            );
-
-            state.localStream = await Promise.race([mediaPromise, timeoutPromise]);
-            debug.log('Media stream acquired:', state.localStream.getTracks());
-
-            callManager.showCallUI(t);
-            
-            // Start call with retry mechanism
-            callManager.establishCallWithRetry();
-            
-        } catch (err) {
-            debug.error('Call start failed:', err);
-            callManager.endCall();
-            callManager.showCallEndedUI(`Failed to start call: ${err.message}`);
-        }
-    },
-
-    establishCallWithRetry: (attempt = 0) => {
-        const maxRetries = 3;
-        if (attempt >= maxRetries) {
-            debug.error('Max call retries reached');
-            callManager.endCall();
-            callManager.showCallEndedUI('Could not establish connection');
-            return;
-        }
-
-        debug.log(`Attempting call initiation (attempt ${attempt + 1})`);
-        socket.emit('call-initiate', {
-            room,
-            callId: state.currentCallId,
-            callType: state.currentCallType,
-            caller: username
+      debug.log(`Creating peer connection for ${userId}`);
+      try {
+        const pc = new RTCPeerConnection({
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' }
+          ],
+          iceTransportPolicy: 'all',
+          bundlePolicy: 'max-bundle',
+          rtcpMuxPolicy: 'require'
         });
 
-        // Set timeout with retry
+        pc.onconnectionstatechange = () => {
+          debug.log(`${userId} connection state: ${pc.connectionState}`);
+          if (pc.connectionState === 'failed') {
+            webrtc.removePeerConnection(userId);
+          }
+        };
+
+        pc.oniceconnectionstatechange = () => {
+          debug.log(`${userId} ICE state: ${pc.iceConnectionState}`);
+          if (['disconnected', 'failed'].includes(pc.iceConnectionState)) {
+            webrtc.removePeerConnection(userId);
+          }
+        };
+
+        pc.onsignalingstatechange = () => {
+          debug.log(`${userId} signaling state: ${pc.signalingState}`);
+        };
+
+        pc.onicecandidate = (event) => {
+          if (event.candidate) {
+            debug.log(`Sending ICE candidate to ${userId}`);
+            socket.emit('ice-candidate', {
+              candidate: event.candidate,
+              room,
+              callId: state.currentCallId,
+              targetUser: userId
+            });
+          }
+        };
+
+        pc.ontrack = (event) => {
+          debug.log(`Track event from ${userId}`);
+          if (event.streams && event.streams.length > 0) {
+            const stream = event.streams.find(s => s.getVideoTracks().length > 0) || event.streams[0];
+            webrtc.attachRemoteStream(userId, stream);
+          }
+        };
+
+        return pc;
+      } catch (error) {
+        debug.error(`Failed to create peer connection:`, error);
+        return null;
+      }
+    },
+
+    attachRemoteStream: (userId, stream) => {
+      debug.log(`Attaching remote stream for ${userId}`);
+      if (!stream) return;
+
+      state.remoteStreams[userId] = stream;
+
+      if (state.currentCallType === 'video' && stream.getVideoTracks().length > 0) {
+        const existing = document.getElementById(`remote-container-${userId}`);
+        if (existing) existing.remove();
+
+        const container = document.createElement('div');
+        container.className = 'video-container';
+        container.id = `remote-container-${userId}`;
+
+        const video = document.createElement('video');
+        video.id = `remote-video-${userId}`;
+        video.autoplay = true;
+        video.playsInline = true;
+
+        const label = document.createElement('div');
+        label.className = 'video-user-label';
+        label.textContent = userId;
+
+        container.appendChild(video);
+        container.appendChild(label);
+        document.getElementById('video-grid').appendChild(container);
+
+        video.srcObject = stream;
+        video.onloadedmetadata = () => {
+          video.play().catch(e => {
+            debug.error('Video play failed:', e);
+            webrtc.showVideoPlayButton(container, video);
+          });
+        };
+      } else {
+        webrtc.addAudioElement(userId);
+      }
+    },
+
+    establishPeerConnection: async (userId, isInitiator = false) => {
+      debug.log(`Establishing connection with ${userId}, initiator: ${isInitiator}`);
+      if (!state.isCallActive || state.peerConnections[userId]) return;
+
+      const pc = webrtc.createPeerConnection(userId);
+      if (!pc) return;
+
+      state.peerConnections[userId] = pc;
+
+      if (state.localStream) {
+        debug.log('Adding local tracks');
+        state.localStream.getTracks().forEach(track => {
+          try {
+            pc.addTrack(track, state.localStream);
+          } catch (err) {
+            debug.error('Error adding track:', err);
+          }
+        });
+      }
+
+      const queue = (state.iceQueues[state.currentCallId] || {})[userId] || [];
+      for (const c of queue) {
+        try {
+          await pc.addIceCandidate(c);
+        } catch (err) {
+          debug.error('Error adding ICE candidate:', err);
+        }
+      }
+      if (state.iceQueues[state.currentCallId]) state.iceQueues[state.currentCallId][userId] = [];
+
+      if (isInitiator) {
+        try {
+          state.makingOffer = true;
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          
+          socket.emit('offer', {
+            offer: pc.localDescription,
+            room,
+            callId: state.currentCallId,
+            targetUser: userId
+          });
+        } catch (err) {
+          debug.error('Error creating offer:', err);
+        } finally {
+          state.makingOffer = false;
+        }
+      }
+    },
+
+    addVideoElement: (type, userId, stream, isLocal = false) => {
+      const g = document.getElementById('video-grid');
+      if (!g) return;
+
+      const existing = document.getElementById(`${type}-container-${userId}`);
+      if (existing) existing.remove();
+
+      const container = document.createElement('div');
+      container.className = `video-container ${isLocal ? 'local-video-container' : ''}`;
+      container.id = `${type}-container-${userId}`;
+
+      const video = document.createElement('video');
+      video.id = `${type}-video-${userId}`;
+      video.autoplay = true;
+      video.playsInline = true;
+      video.muted = isLocal;
+
+      if (isLocal && state.currentCallType === 'video') {
+        video.style.transform = 'scaleX(-1)';
+      }
+
+      const label = document.createElement('div');
+      label.className = 'video-user-label';
+      label.textContent = userId === username ? 'You' : userId;
+
+      container.appendChild(video);
+      container.appendChild(label);
+      g.appendChild(container);
+
+      if (stream.active) {
+        video.srcObject = stream;
+        video.onloadedmetadata = () => {
+          video.play().catch(e => {
+            debug.error('Video play failed:', e);
+            webrtc.showVideoPlayButton(container, video);
+          });
+        };
+      }
+    },
+
+    addAudioElement: (userId) => {
+      const g = document.getElementById('video-grid');
+      if (!g) return;
+
+      const c = document.createElement('div');
+      c.className = 'audio-container';
+      c.id = `audio-container-${userId}`;
+
+      const l = document.createElement('div');
+      l.className = 'video-user-label';
+      l.textContent = userId === username ? 'You' : userId;
+
+      const i = document.createElement('div');
+      i.className = 'audio-icon';
+      i.innerHTML = '<i class="fas fa-microphone"></i>';
+
+      c.appendChild(i);
+      c.appendChild(l);
+      g.appendChild(c);
+    },
+
+    showVideoPlayButton: (container, video) => {
+      const existingBtn = container.querySelector('.video-play-btn');
+      if (existingBtn) return;
+
+      const playBtn = document.createElement('button');
+      playBtn.className = 'video-play-btn';
+      playBtn.innerHTML = '<i class="fas fa-play"></i>';
+      playBtn.onclick = () => {
+        video.play()
+          .then(() => playBtn.remove())
+          .catch(e => debug.error('Still cannot play:', e));
+      };
+      container.appendChild(playBtn);
+    },
+
+    removePeerConnection: (userId) => {
+      debug.log(`Removing peer connection for ${userId}`);
+      if (state.peerConnections[userId]) {
+        try {
+          // Stop all tracks before closing
+          const pc = state.peerConnections[userId];
+          pc.getSenders().forEach(sender => {
+            if (sender.track) sender.track.stop();
+          });
+          pc.close();
+        } catch (err) {
+          debug.error('Error closing peer connection:', err);
+        }
+        delete state.peerConnections[userId];
+      }
+
+      const vc = document.getElementById(`remote-container-${userId}`);
+      if (vc) vc.remove();
+
+      const ac = document.getElementById(`audio-container-${userId}`);
+      if (ac) ac.remove();
+
+      delete state.remoteStreams[userId];
+    }
+  };
+
+  // Call Management
+  const callManager = {
+    showCallingUI: (t) => {
+      elements.videoCallContainer.innerHTML = `
+        <div class="calling-ui">
+          <div class="calling-spinner"></div>
+          <div class="calling-text">Calling ${t === 'audio' ? '(Audio)' : '(Video)'}...</div>
+          <button id="cancel-call-btn" class="btn btn-danger">
+            <i class="fas fa-phone-slash"></i> Cancel
+          </button>
+        </div>
+      `;
+      elements.videoCallContainer.classList.remove('d-none');
+      document.getElementById('cancel-call-btn').onclick = callManager.endCall;
+
+      media.callSound.loop = true;
+      media.callSound.play().catch(() => {
+        const soundBtn = document.createElement('button');
+        soundBtn.className = 'sound-permission-btn';
+        soundBtn.innerHTML = '<i class="fas fa-volume-up"></i> Click to enable call sounds';
+        soundBtn.onclick = () => {
+          media.callSound.play().then(() => soundBtn.remove()).catch(console.error);
+        };
+        elements.videoCallContainer.querySelector('.calling-ui').appendChild(soundBtn);
+      });
+    },
+
+    showCallUI: (t) => {
+      media.callSound.pause();
+      clearTimeout(state.callTimeout);
+
+      let controls = `
+        <button id="toggle-audio-btn" class="control-btn audio-btn">
+          <i class="fas fa-microphone${state.isAudioMuted ? '-slash' : ''}"></i>
+        </button>
+        <button id="end-call-btn" class="control-btn end-btn">
+          <i class="fas fa-phone-slash"></i>
+        </button>
+      `;
+
+      if (t === 'video') {
+        controls += `
+          <button id="toggle-video-btn" class="control-btn video-btn">
+            <i class="fas fa-video${state.isVideoOff ? '-slash' : ''}"></i>
+          </button>
+          <button id="flip-camera-btn" class="control-btn flip-btn">
+            <i class="fas fa-camera-retro"></i>
+          </button>
+        `;
+      }
+
+      elements.videoCallContainer.innerHTML = `
+        <div class="video-call-active">
+          <div id="video-grid" class="video-grid"></div>
+          <div class="video-controls">${controls}</div>
+        </div>
+      `;
+
+      elements.videoCallContainer.classList.remove('d-none');
+      document.getElementById('toggle-audio-btn').onclick = callManager.toggleAudio;
+      document.getElementById('end-call-btn').onclick = callManager.endCall;
+
+      if (t === 'video') {
+        document.getElementById('toggle-video-btn').onclick = callManager.toggleVideo;
+        document.getElementById('flip-camera-btn').onclick = callManager.flipCamera;
+        webrtc.addVideoElement('local', username, state.localStream, true);
+      }
+    },
+
+    hideCallUI: () => {
+      elements.videoCallContainer.classList.add('d-none');
+      media.callSound.pause();
+      clearTimeout(state.callTimeout);
+    },
+
+    showCallEndedUI: (m) => {
+      const d = document.createElement('div');
+      d.className = 'call-ended-alert';
+      d.innerHTML = `
+        <div class="alert-content">
+          <p>${m}</p>
+          <button id="close-alert-btn" class="btn btn-primary">OK</button>
+        </div>
+      `;
+      document.body.appendChild(d);
+      document.getElementById('close-alert-btn').onclick = () => d.remove();
+    },
+
+    startCall: async (t) => {
+      if (state.isCallActive) return;
+
+      try {
+        // Test permissions first
+        const testStream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: t === 'video' ? {
+            facingMode: 'user',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          } : false
+        });
+        testStream.getTracks().forEach(track => track.stop());
+      } catch (err) {
+        return alert(`Please allow ${t === 'video' ? 'camera and microphone' : 'microphone'} access.`);
+      }
+
+      state.isCallActive = true;
+      state.currentCallType = t;
+      state.currentCallId = utils.generateId();
+      state.iceQueues[state.currentCallId] = {};
+
+      callManager.showCallingUI(t);
+
+      try {
+        state.localStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          },
+          video: t === 'video' ? {
+            facingMode: 'user',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          } : false
+        });
+
+        debug.log('Local stream tracks:', state.localStream.getTracks());
+        callManager.showCallUI(t);
+        
+        socket.emit('call-initiate', {
+          room,
+          callId: state.currentCallId,
+          callType: t,
+          caller: username
+        });
+
         state.callTimeout = setTimeout(() => {
-            if (Object.keys(state.peerConnections).length === 0) {
-                debug.warn('No response - retrying...');
-                callManager.establishCallWithRetry(attempt + 1);
-            }
-        }, attempt === 0 ? 15000 : 10000); // Longer timeout for first attempt
+          if (!Object.keys(state.peerConnections).length) {
+            callManager.endCall();
+            callManager.showCallEndedUI('No one answered');
+          }
+        }, 45000);
+      } catch (err) {
+        debug.error('Call start failed:', err);
+        callManager.endCall();
+        callManager.showCallEndedUI('Call failed to start: ' + err.message);
+      }
     },
 
-    retryConnection: (userId) => {
-        if (!state.isCallActive || state.reconnectAttempts >= 3) return;
-        
-        state.reconnectAttempts++;
-        debug.log(`Retrying connection with ${userId} (attempt ${state.reconnectAttempts})`);
-        
-        setTimeout(() => {
-            if (state.isCallActive && state.peerConnections[userId]) {
-                webrtc.establishPeerConnection(userId, true);
-            }
-        }, state.reconnectAttempts * 2000); // Exponential backoff
+    handleIncomingCall: async ({ callType, callId, caller }) => {
+      if (state.isCallActive) {
+        socket.emit('reject-call', { room, callId, reason: 'busy' });
+        return;
+      }
+
+      const ok = confirm(`${caller} is calling (${callType}). Accept?`);
+      if (!ok) {
+        socket.emit('reject-call', { room, callId });
+        return;
+      }
+
+      state.isCallActive = true;
+      state.currentCallType = callType;
+      state.currentCallId = callId;
+      state.iceQueues[callId] = {};
+
+      try {
+        state.localStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          },
+          video: callType === 'video' ? {
+            facingMode: 'user',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          } : false
+        });
+
+        callManager.showCallUI(callType);
+        socket.emit('accept-call', { room, callId });
+        socket.emit('get-call-participants', { room, callId });
+      } catch (e) {
+        debug.error('Media access failed:', e);
+        callManager.endCall();
+        callManager.showCallEndedUI('Failed to access media devices');
+      }
     },
 
-    // [Rest of your call manager functions...]
-};
+    endCall: () => {
+      debug.log('Ending call and cleaning up resources');
+      Object.keys(state.peerConnections).forEach(webrtc.removePeerConnection);
 
-// Enhanced Socket Handlers
-const setupSocketHandlers = () => {
-    // [Previous socket handlers...]
+      if (state.localStream) {
+        debug.log('Stopping local stream tracks');
+        state.localStream.getTracks().forEach(t => {
+          t.stop();
+          debug.log(`Stopped ${t.kind} track`);
+        });
+        state.localStream = null;
+      }
 
-    socket.on('offer', async ({ offer, userId, callId }) => {
-        debug.log(`Received offer from ${userId} with type ${offer.type}`);
-        if (callId !== state.currentCallId || !state.isCallActive) return;
+      state.isCallActive = false;
+      state.currentCallId = null;
+      state.currentCallType = null;
+      clearTimeout(state.callTimeout);
+      callManager.hideCallUI();
 
-        try {
-            const pc = state.peerConnections[userId] || await webrtc.establishPeerConnection(userId);
-            if (!pc) throw new Error('Failed to create peer connection');
+      if (state.currentCallId) {
+        socket.emit('end-call', { room, callId: state.currentCallId });
+      }
+    },
 
-            debug.log(`Current signaling state: ${pc.signalingState}`);
-            
-            await pc.setRemoteDescription(new RTCSessionDescription(offer));
-            debug.log('Remote description set successfully');
+    toggleAudio: () => {
+      state.isAudioMuted = !state.isAudioMuted;
+      if (state.localStream) {
+        state.localStream.getAudioTracks().forEach(t => t.enabled = !state.isAudioMuted);
+      }
+      callManager.updateMediaButtons();
+      socket.emit('mute-state', {
+        room,
+        callId: state.currentCallId,
+        isAudioMuted: state.isAudioMuted,
+        userId: username
+      });
+    },
 
-            if (offer.type === 'offer') {
-                const answer = await pc.createAnswer({
-                    offerToReceiveAudio: true,
-                    offerToReceiveVideo: state.currentCallType === 'video'
-                });
-                debug.log('Created answer:', answer.type);
-                
-                await pc.setLocalDescription(answer);
-                debug.log('Local description set');
-                
-                socket.emit('answer', {
-                    answer: pc.localDescription,
-                    room,
-                    callId,
-                    targetUser: userId
-                });
-            }
-        } catch (err) {
-            debug.error('Offer handling failed:', err);
-            callManager.retryConnection(userId);
-        }
-    });
+    toggleVideo: () => {
+      state.isVideoOff = !state.isVideoOff;
+      if (state.localStream) {
+        state.localStream.getVideoTracks().forEach(t => t.enabled = !state.isVideoOff);
+      }
+      callManager.updateMediaButtons();
+      socket.emit('video-state', {
+        room,
+        callId: state.currentCallId,
+        isVideoOff: state.isVideoOff,
+        userId: username
+      });
+    },
 
-    socket.on('ice-candidate', async ({ candidate, userId, callId }) => {
-        debug.log(`Processing ICE candidate from ${userId}`);
-        if (callId !== state.currentCallId) return;
+    flipCamera: async () => {
+      if (!state.localStream || state.currentCallType !== 'video') return;
 
-        try {
-            const pc = state.peerConnections[userId];
-            if (pc) {
-                await pc.addIceCandidate(new RTCIceCandidate(candidate));
-                debug.log('Successfully added ICE candidate');
-            } else {
-                debug.log('Queuing ICE candidate - no peer connection yet');
-                state.iceQueues[callId] = state.iceQueues[callId] || {};
-                state.iceQueues[callId][userId] = state.iceQueues[callId][userId] || [];
-                state.iceQueues[callId][userId].push(new RTCIceCandidate(candidate));
-            }
-        } catch (err) {
-            debug.error('Failed to add ICE candidate:', err);
-        }
-    });
+      try {
+        state.localStream.getVideoTracks().forEach(t => t.stop());
+        state.currentFacingMode = state.currentFacingMode === 'user' ? 'environment' : 'user';
 
-    // [Rest of your socket handlers...]
-};
+        const ns = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: {
+            facingMode: state.currentFacingMode,
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        });
 
-  
+        state.localStream.getTracks().forEach(t => state.localStream.removeTrack(t));
+        ns.getTracks().forEach(t => state.localStream.addTrack(t));
+
+        Object.values(state.peerConnections).forEach(pc => {
+          const s = pc.getSenders().find(x => x.track?.kind === 'video');
+          if (s) s.replaceTrack(state.localStream.getVideoTracks()[0]);
+        });
+
+        const lv = document.getElementById(`local-video-${username}`);
+        if (lv) lv.srcObject = state.localStream;
+      } catch (e) {
+        debug.error('Camera flip failed:', e);
+      }
+    },
+
+    updateMediaButtons: () => {
+      const a = document.getElementById('toggle-audio-btn');
+      const v = document.getElementById('toggle-video-btn');
+
+      if (a) {
+        a.innerHTML = `<i class="fas fa-microphone${state.isAudioMuted ? '-slash' : ''}"></i>`;
+        a.title = state.isAudioMuted ? 'Unmute' : 'Mute';
+      }
+
+      if (v) {
+        v.innerHTML = `<i class="fas fa-video${state.isVideoOff ? '-slash' : ''}"></i>`;
+        v.title = state.isVideoOff ? 'Enable video' : 'Disable video';
+      }
+    }
+  };
 
   // Event Listeners
   const setupEventListeners = () => {
@@ -529,7 +831,164 @@ const setupSocketHandlers = () => {
   };
 
   // Socket.IO Handlers
-  
+  const setupSocketHandlers = () => {
+    socket.on('connect', () => {
+      state.reconnectAttempts = 0;
+      utils.updateConnectionStatus({ text: 'Connected', type: 'connected' });
+      if (!state.hasJoined) {
+        socket.emit('joinRoom', { username, room });
+        state.hasJoined = true;
+      }
+    });
+
+    socket.on('disconnect', (reason) => {
+      utils.updateConnectionStatus({ text: 'Disconnected', type: 'disconnected' });
+      debug.log('Disconnected:', reason);
+      if (reason === 'io server disconnect') {
+        setTimeout(() => socket.connect(), 1000);
+      }
+    });
+
+    socket.on('reconnect_attempt', (attempt) => {
+      state.reconnectAttempts = attempt;
+      utils.updateConnectionStatus({
+        text: `Reconnecting (${attempt}/${state.MAX_RECONNECT_ATTEMPTS})...`,
+        type: 'reconnecting'
+      });
+    });
+
+    socket.on('reconnect_failed', () => {
+      utils.updateConnectionStatus({
+        text: 'Failed to reconnect. Please refresh.',
+        type: 'error'
+      });
+    });
+
+    socket.on('connect_error', (err) => {
+      debug.error('Connection error:', err);
+      utils.updateConnectionStatus({
+        text: 'Connection error',
+        type: 'error'
+      });
+    });
+
+    socket.on('message', msg => {
+      debug.log('Received message:', msg);
+      if (msg.username !== username && !state.isMuted) {
+        utils.playNotificationSound();
+      }
+      messageHandler.addMessage(msg);
+    });
+
+    socket.on('typing', ({ username: u }) => {
+      debug.log(`${u} is typing`);
+      if (u !== username) messageHandler.showTypingIndicator(u);
+    });
+
+    socket.on('stopTyping', () => {
+      debug.log('Typing stopped');
+      document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
+    });
+
+    socket.on('incoming-call', callManager.handleIncomingCall);
+
+    socket.on('offer', async ({ offer, userId, callId }) => {
+      debug.log(`Received offer from ${userId}`);
+      if (callId !== state.currentCallId || !state.isCallActive) return;
+
+      const pc = state.peerConnections[userId] || await webrtc.establishPeerConnection(userId);
+      
+      try {
+        const offerCollision = (offer.type === 'offer') && 
+          (state.makingOffer || pc.signalingState !== 'stable');
+        
+        state.ignoreOffer = !state.isCallActive && offerCollision;
+        if (state.ignoreOffer) return;
+
+        await pc.setRemoteDescription(offer);
+        if (offer.type === 'offer') {
+          await pc.setLocalDescription(await pc.createAnswer());
+          socket.emit('answer', {
+            answer: pc.localDescription,
+            room,
+            callId,
+            targetUser: userId
+          });
+        }
+      } catch (err) {
+        debug.error('Offer handling failed:', err);
+      }
+    });
+
+    socket.on('answer', async ({ answer, userId, callId }) => {
+      debug.log(`Received answer from ${userId}`);
+      if (callId !== state.currentCallId) return;
+      const pc = state.peerConnections[userId];
+      if (!pc) return;
+
+      try {
+        await pc.setRemoteDescription(answer);
+      } catch (err) {
+        debug.error('Answer handling failed:', err);
+      }
+    });
+
+    socket.on('ice-candidate', ({ candidate, userId, callId }) => {
+      debug.log(`Received ICE candidate from ${userId}`);
+      if (!state.peerConnections[userId]) {
+        state.iceQueues[callId] = state.iceQueues[callId] || {};
+        state.iceQueues[callId][userId] = state.iceQueues[callId][userId] || [];
+        state.iceQueues[callId][userId].push(candidate);
+      } else {
+        state.peerConnections[userId].addIceCandidate(candidate).catch(err => {
+          debug.error('Error adding ICE candidate:', err);
+        });
+      }
+    });
+
+    socket.on('call-participants', ({ participants, callId }) => {
+      debug.log('Call participants:', participants);
+      if (callId !== state.currentCallId) return;
+
+      participants.forEach(uid => {
+        if (uid !== username && !state.peerConnections[uid]) {
+          const init = participants.indexOf(username) < participants.indexOf(uid);
+          webrtc.establishPeerConnection(uid, init);
+        }
+      });
+    });
+
+    socket.on('accept-call', async ({ userId, callId }) => {
+      debug.log(`${userId} accepted call`);
+      if (callId !== state.currentCallId || !state.isCallActive) return;
+      await webrtc.establishPeerConnection(userId, true);
+    });
+
+    socket.on('end-call', () => {
+      debug.log('Call ended by remote peer');
+      callManager.endCall();
+      callManager.showCallEndedUI('Call ended');
+    });
+
+    socket.on('reject-call', ({ reason }) => {
+      debug.log(`Call rejected: ${reason}`);
+      callManager.endCall();
+      callManager.showCallEndedUI(reason === 'busy' ? 'User busy' : 'Call rejected');
+    });
+
+    socket.on('user-left-call', ({ userId }) => {
+      debug.log(`${userId} left the call`);
+      webrtc.removePeerConnection(userId);
+    });
+
+    socket.on('mute-state', ({ userId, isAudioMuted }) => {
+      debug.log(`User ${userId} ${isAudioMuted ? 'muted' : 'unmuted'} audio`);
+    });
+
+    socket.on('video-state', ({ userId, isVideoOff }) => {
+      debug.log(`User ${userId} ${isVideoOff ? 'disabled' : 'enabled'} video`);
+    });
+  };
 
   // Initialize Application
   const init = () => {
