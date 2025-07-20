@@ -1,5 +1,5 @@
 // ======================
-// main.js (complete ~820 lines)
+// main.js (~820 lines)
 // ======================
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -52,16 +52,16 @@ window.addEventListener('DOMContentLoaded', () => {
   // ======================
   // WEBRTC STATE
   // ======================
-  let peerConnections  = {};
-  let localStream      = null;
-  let remoteStreams    = {};
-  let currentCallId    = null;
-  let callTimeout      = null;
-  let isCallActive     = false;
-  let iceQueues        = {};
-  let isAudioMuted     = false;
-  let isVideoOff       = false;
-  let currentCallType  = null;
+  let peerConnections   = {};
+  let localStream       = null;
+  let remoteStreams     = {};
+  let currentCallId     = null;
+  let callTimeout       = null;
+  let isCallActive      = false;
+  let iceQueues         = {};
+  let isAudioMuted      = false;
+  let isVideoOff        = false;
+  let currentCallType   = null;
   let currentFacingMode = 'user';
 
   // ======================
@@ -93,24 +93,22 @@ window.addEventListener('DOMContentLoaded', () => {
     if (!isCallActive || peerConnections[userId]) return;
     const pc = new RTCPeerConnection({
       iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        // add TURN servers here if you have them
+        { urls: 'stun:stun.l.google.com:19302' }
+        // add TURN servers if available
       ]
     });
     peerConnections[userId] = pc;
 
     pc.oniceconnectionstatechange = () => {
-      if (['disconnected', 'failed'].includes(pc.iceConnectionState)) {
+      if (['disconnected','failed'].includes(pc.iceConnectionState)) {
         removePeerConnection(userId);
       }
     };
 
-    // modern
     pc.ontrack = e => {
       const s = e.streams[0] || new MediaStream([e.track]);
       attachRemoteStream(userId, s);
     };
-    // legacy
     pc.onaddstream = e => attachRemoteStream(userId, e.stream);
 
     pc.onnegotiationneeded = async () => {
@@ -128,7 +126,7 @@ window.addEventListener('DOMContentLoaded', () => {
     };
 
     if (localStream) {
-      if ('addStream' in pc) {
+      if (pc.addStream) {
         pc.addStream(localStream);
       } else {
         await addLocalTracks(pc, localStream);
@@ -147,12 +145,8 @@ window.addEventListener('DOMContentLoaded', () => {
     };
 
     const queue = (iceQueues[currentCallId] || {})[userId] || [];
-    for (const c of queue) {
-      await pc.addIceCandidate(c).catch(console.error);
-    }
-    if (iceQueues[currentCallId]) {
-      iceQueues[currentCallId][userId] = [];
-    }
+    for (const c of queue) await pc.addIceCandidate(c).catch(console.error);
+    if (iceQueues[currentCallId]) iceQueues[currentCallId][userId] = [];
   }
 
   // ======================
@@ -181,16 +175,12 @@ window.addEventListener('DOMContentLoaded', () => {
     : '<i class="fas fa-bell"></i>';
 
   function addMessage(msg) {
-    // remove typing indicators
     document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
-
     const el       = document.createElement('div');
     const isMe     = msg.username === username;
     const isSystem = msg.username === 'ChatApp Bot';
-
-    el.id        = msg.id;
-    el.className = `message ${isMe ? 'you' : 'other'}${isSystem ? ' system' : ''}`;
-
+    el.id          = msg.id;
+    el.className   = `message ${isMe?'you':'other'}${isSystem?' system':''}`;
     let html = '';
     if (msg.replyTo) {
       html += `
@@ -201,23 +191,21 @@ window.addEventListener('DOMContentLoaded', () => {
     }
     html += `
       <div class="meta">
-        ${isMe ? '<span class="prompt-sign">></span>' : ''}
+        ${isMe?'<span class="prompt-sign">></span>':''}
         <strong>${msg.username}</strong>
         <span class="message-time">${msg.time}</span>
       </div>
       <div class="text">${msg.text}</div>`;
-
     if (isMe) {
-      const seen     = msg.seenBy || [];
-      const seenIcon = seen.length > 1 ? '✓✓' : '✓';
-      const seenNames = seen.map(u => (u === username ? 'You' : u)).join(', ');
+      const seen     = msg.seenBy||[];
+      const seenIcon = seen.length>1?'✓✓':'✓';
+      const seenNames=seen.map(u=>(u===username?'You':u)).join(', ');
       html += `
         <div class="message-status">
           <span class="seen-icon">${seenIcon}</span>
-          ${seenNames ? `<span class="seen-users">${seenNames}</span>` : ''}
+          ${seenNames?`<span class="seen-users">${seenNames}</span>`:''}
         </div>`;
     }
-
     el.innerHTML = html;
     if (!isSystem) {
       el.onclick = () => {
@@ -226,52 +214,37 @@ window.addEventListener('DOMContentLoaded', () => {
         setupReply(user, el.id, text);
       };
     }
-
     chatMessages.appendChild(el);
-    setTimeout(
-      () =>
-        chatMessages.scrollTo({
-          top: chatMessages.scrollHeight,
-          behavior: 'smooth'
-        }),
-      20
-    );
+    setTimeout(()=>chatMessages.scrollTo({top:chatMessages.scrollHeight,behavior:'smooth'}),20);
   }
 
-  function setupReply(user, msgID, text) {
-    replyTo = { id: msgID, username: user, text };
+  function setupReply(user,msgID,text) {
+    replyTo = {id:msgID,username:user,text};
     replyUserElem.textContent = user;
-    replyTextElem.textContent = text.length > 30 ? text.substr(0, 30) + '...' : text;
+    replyTextElem.textContent = text.length>30?text.substr(0,30)+'...':text;
     replyPreview.classList.remove('d-none');
     msgInput.focus();
   }
-  cancelReplyBtn.onclick = e => {
-    e.stopPropagation();
-    replyTo = null;
-    replyPreview.classList.add('d-none');
-  };
+  cancelReplyBtn.onclick = e => {e.stopPropagation();replyTo=null;replyPreview.classList.add('d-none');};
 
-  // typing
   msgInput.oninput = () => {
     const now = Date.now();
     if (now - lastTypingUpdate > 1000) {
-      socket.emit('typing', { room });
+      socket.emit('typing',{room});
       lastTypingUpdate = now;
     }
     clearTimeout(window._stopTyping);
-    window._stopTyping = setTimeout(() => socket.emit('stopTyping', { room }), 2000);
+    window._stopTyping = setTimeout(()=>socket.emit('stopTyping',{room}),2000);
   };
   function showTypingIndicator(user) {
     if (!document.querySelector('.typing-indicator')) {
       const d = document.createElement('div');
       d.className = 'typing-indicator other';
       d.innerHTML = `
-        <div class="dots">
-          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-        </div>
+        <div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
         <span class="typing-text">${user} is typing...</span>`;
       chatMessages.appendChild(d);
-      chatMessages.scrollTo({ top: chatMessages.scrollHeight, behavior: 'smooth' });
+      chatMessages.scrollTo({top:chatMessages.scrollHeight,behavior:'smooth'});
     }
   }
 
@@ -282,49 +255,45 @@ window.addEventListener('DOMContentLoaded', () => {
     videoCallContainer.innerHTML = `
       <div class="calling-ui">
         <div class="calling-spinner"></div>
-        <div class="calling-text">Calling ${callType === 'audio' ? '(Audio)' : '(Video)'}...</div>
+        <div class="calling-text">Calling ${callType==='audio'?'(Audio)':'(Video)'}...</div>
         <button id="cancel-call-btn" class="btn btn-danger">
           <i class="fas fa-phone-slash"></i> Cancel
         </button>
       </div>`;
     videoCallContainer.classList.remove('d-none');
     document.getElementById('cancel-call-btn').onclick = endCall;
-    callSound.loop = true;
-    callSound.play().catch(() => {});
+    callSound.loop = true; callSound.play().catch(()=>{});
   }
 
   function showCallUI(callType) {
     callSound.pause();
     clearTimeout(callTimeout);
-
     videoCallContainer.innerHTML = `
       <div class="video-call-active">
         <div id="video-grid" class="video-grid"></div>
         <div class="video-controls">
           <button id="toggle-audio-btn" class="control-btn audio-btn">
-            <i class="fas fa-microphone${isAudioMuted ? '-slash' : ''}"></i>
+            <i class="fas fa-microphone${isAudioMuted?'-slash':''}"></i>
           </button>
           <button id="end-call-btn" class="control-btn end-btn">
             <i class="fas fa-phone-slash"></i>
           </button>
-          ${callType === 'video'
-            ? `<button id="toggle-video-btn" class="control-btn video-btn">
-                 <i class="fas fa-video${isVideoOff ? '-slash' : ''}"></i>
-               </button>
-               <button id="flip-camera-btn" class="control-btn flip-btn">
-                 <i class="fas fa-camera-retro"></i>
-               </button>`
-            : ''}
+          ${callType==='video'?`
+            <button id="toggle-video-btn" class="control-btn video-btn">
+              <i class="fas fa-video${isVideoOff?'-slash':''}"></i>
+            </button>
+            <button id="flip-camera-btn" class="control-btn flip-btn">
+              <i class="fas fa-camera-retro"></i>
+            </button>`:''}
         </div>
       </div>`;
-
     videoCallContainer.classList.remove('d-none');
     document.getElementById('toggle-audio-btn').onclick = toggleAudio;
     document.getElementById('end-call-btn').onclick = endCall;
-    if (callType === 'video') {
+    if (callType==='video') {
       document.getElementById('toggle-video-btn').onclick = toggleVideo;
       document.getElementById('flip-camera-btn').onclick = flipCamera;
-      addVideoElement('local', username, localStream, true);
+      addVideoElement('local',username,localStream,true);
     }
   }
 
@@ -343,352 +312,249 @@ window.addEventListener('DOMContentLoaded', () => {
         <button id="close-alert-btn" class="btn btn-primary">OK</button>
       </div>`;
     document.body.appendChild(div);
-    document.getElementById('close-alert-btn').onclick = () => div.remove();
+    document.getElementById('close-alert-btn').onclick = ()=>div.remove();
   }
 
   // ======================
   // MEDIA ELEMENTS
   // ======================
-  function addVideoElement(type, userId, stream, isLocal = false) {
-    const videoGrid = document.getElementById('video-grid');
-    if (!videoGrid) return;
-    const existing = document.getElementById(`${type}-container-${userId}`);
-    if (existing) existing.remove();
-
-    const container = document.createElement('div');
-    container.className = `video-container ${isLocal ? 'local-video-container' : ''}`;
-    container.id = `${type}-container-${userId}`;
-
-    const video = document.createElement('video');
-    video.id = `${type}-video-${userId}`;
-    video.autoplay = true;
-    video.playsInline = true;
-    video.muted = isLocal;
-    if (isLocal && currentCallType === 'video') {
-      video.style.transform = 'scaleX(-1)';
-    }
-
-    const label = document.createElement('div');
-    label.className = 'video-user-label';
-    label.textContent = userId === username ? 'You' : userId;
-
-    container.appendChild(video);
-    container.appendChild(label);
-    videoGrid.appendChild(container);
-
-    video.srcObject = stream;
-    video.onloadedmetadata = () => video.play().catch(console.error);
+  function addVideoElement(type,userId,stream,isLocal=false){
+    const grid=document.getElementById('video-grid'); if(!grid) return;
+    const ex=document.getElementById(`${type}-container-${userId}`); if(ex) ex.remove();
+    const cont=document.createElement('div');
+    cont.className=`video-container ${isLocal?'local-video-container':''}`;
+    cont.id=`${type}-container-${userId}`;
+    const vid=document.createElement('video');
+    vid.id=`${type}-video-${userId}`; vid.autoplay=true; vid.playsInline=true; vid.muted=isLocal;
+    if(isLocal&&currentCallType==='video') vid.style.transform='scaleX(-1)';
+    const lbl=document.createElement('div');
+    lbl.className='video-user-label'; lbl.textContent=userId===username?'You':userId;
+    cont.appendChild(vid); cont.appendChild(lbl); grid.appendChild(cont);
+    vid.srcObject=stream; vid.onloadedmetadata=()=>vid.play().catch(console.error);
   }
 
-  function addAudioElement(userId) {
-    const videoGrid = document.getElementById('video-grid');
-    if (!videoGrid) return;
-
-    const audioContainer = document.createElement('div');
-    audioContainer.className = 'audio-container';
-    audioContainer.id = `audio-container-${userId}`;
-
-    const userLabel = document.createElement('div');
-    userLabel.className = 'video-user-label';
-    userLabel.textContent = userId === username ? 'You' : userId;
-
-    const audioIcon = document.createElement('div');
-    audioIcon.className = 'audio-icon';
-    audioIcon.innerHTML = '<i class="fas fa-microphone"></i>';
-
-    audioContainer.appendChild(audioIcon);
-    audioContainer.appendChild(userLabel);
-    videoGrid.appendChild(audioContainer);
+  function addAudioElement(userId){
+    const grid=document.getElementById('video-grid'); if(!grid)return;
+    const cont=document.createElement('div');
+    cont.className='audio-container'; cont.id=`audio-container-${userId}`;
+    const lbl=document.createElement('div');
+    lbl.className='video-user-label'; lbl.textContent=userId===username?'You':userId;
+    const icon=document.createElement('div');
+    icon.className='audio-icon'; icon.innerHTML='<i class="fas fa-microphone"></i>';
+    cont.appendChild(icon); cont.appendChild(lbl); grid.appendChild(cont);
   }
 
-  function updateMediaButtons() {
-    const aBtn = document.getElementById('toggle-audio-btn');
-    const vBtn = document.getElementById('toggle-video-btn');
-    if (aBtn) aBtn.innerHTML = `<i class="fas fa-microphone${isAudioMuted ? '-slash' : ''}"></i>`;
-    if (vBtn) vBtn.innerHTML = `<i class="fas fa-video${isVideoOff ? '-slash' : ''}"></i>`;
+  function updateMediaButtons(){
+    const aBtn=document.getElementById('toggle-audio-btn');
+    const vBtn=document.getElementById('toggle-video-btn');
+    if(aBtn) aBtn.innerHTML=`<i class="fas fa-microphone${isAudioMuted?'-slash':''}"></i>`;
+    if(vBtn) vBtn.innerHTML=`<i class="fas fa-video${isVideoOff?'-slash':''}"></i>`;
   }
 
-  async function toggleAudio() {
-    isAudioMuted = !isAudioMuted;
-    localStream.getAudioTracks().forEach(t => (t.enabled = !isAudioMuted));
+  async function toggleAudio(){
+    isAudioMuted=!isAudioMuted; localStream.getAudioTracks().forEach(t=>t.enabled=!isAudioMuted);
     updateMediaButtons();
-    socket.emit('mute-state', {
-      room,
-      callId: currentCallId,
-      isAudioMuted,
-      userId: username
-    });
+    socket.emit('mute-state',{room,callId:currentCallId,isAudioMuted,userId:username});
   }
 
-  async function toggleVideo() {
-    isVideoOff = !isVideoOff;
-    localStream.getVideoTracks().forEach(t => (t.enabled = !isVideoOff));
+  async function toggleVideo(){
+    isVideoOff=!isVideoOff; localStream.getVideoTracks().forEach(t=>t.enabled=!isVideoOff);
     updateMediaButtons();
-    socket.emit('video-state', {
-      room,
-      callId: currentCallId,
-      isVideoOff,
-      userId: username
-    });
+    socket.emit('video-state',{room,callId:currentCallId,isVideoOff,userId:username});
   }
 
-  async function flipCamera() {
-    if (!localStream || currentCallType !== 'video') return;
-    localStream.getVideoTracks().forEach(t => t.stop());
-    currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-    try {
-      const newStream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: { facingMode: currentFacingMode }
+  async function flipCamera(){
+    if(!localStream||currentCallType!=='video')return;
+    localStream.getVideoTracks().forEach(t=>t.stop());
+    currentFacingMode=currentFacingMode==='user'?'environment':'user';
+    try{
+      const newS=await navigator.mediaDevices.getUserMedia({audio:true,video:{facingMode:currentFacingMode}});
+      localStream.getTracks().forEach(t=>localStream.removeTrack(t));
+      newS.getTracks().forEach(t=>localStream.addTrack(t));
+      Object.values(peerConnections).forEach(pc=>{
+        const s=pc.getSenders().find(x=>x.track.kind==='video');
+        if(s) s.replaceTrack(localStream.getVideoTracks()[0]);
       });
-      localStream.getTracks().forEach(track => localStream.removeTrack(track));
-      newStream.getTracks().forEach(track => localStream.addTrack(track));
-
-      Object.values(peerConnections).forEach(pc => {
-        const sender = pc.getSenders().find(s => s.track.kind === 'video');
-        if (sender) sender.replaceTrack(localStream.getVideoTracks()[0]);
-      });
-
-      const localVideo = document.getElementById(`local-video-${username}`);
-      if (localVideo) localVideo.srcObject = localStream;
-    } catch (err) {
-      console.error('Error flipping camera:', err);
-    }
+      const lv=document.getElementById(`local-video-${username}`);
+      if(lv) lv.srcObject=localStream;
+    }catch(e){console.error(e);}
   }
 
   // ======================
   // CALL MANAGEMENT
   // ======================
-  async function startCall(callType) {
-    if (isCallActive) return;
-
-    try {
-      const test = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: callType === 'video' ? { facingMode: 'user' } : false
+  async function startCall(callType){
+    if(isCallActive) return;
+    try{
+      const test=await navigator.mediaDevices.getUserMedia({
+        audio:true,video:callType==='video'?{facingMode:'user'}:false
       });
-      test.getTracks().forEach(t => t.stop());
-    } catch (err) {
-      return alert(
-        `Please allow ${
-          callType === 'video' ? 'camera and microphone' : 'microphone'
-        } access.`
-      );
+      test.getTracks().forEach(t=>t.stop());
+    }catch{
+      return alert(`Please allow ${callType==='video'?'camera and microphone':'microphone'} access.`);
     }
-
-    isCallActive = true;
-    currentCallType = callType;
-    currentCallId = uuidv4();
-    iceQueues[currentCallId] = {};
-
+    isCallActive=true; currentCallType=callType; currentCallId=uuidv4(); iceQueues[currentCallId]={};
     showCallingUI(callType);
-
-    try {
-      localStream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: callType === 'video' ? { facingMode: 'user' } : false
+    try{
+      localStream=await navigator.mediaDevices.getUserMedia({
+        audio:true,video:callType==='video'?{facingMode:'user'}:false
       });
       showCallUI(callType);
-      socket.emit('call-initiate', {
-        room,
-        callId: currentCallId,
-        callType,
-        caller: username
-      });
-
-      callTimeout = setTimeout(() => {
-        if (Object.keys(peerConnections).length === 0) {
-          endCall();
-          showCallEndedUI('No one answered');
+      socket.emit('call-initiate',{room,callId:currentCallId,callType,caller:username});
+      callTimeout=setTimeout(()=>{
+        if(Object.keys(peerConnections).length===0){
+          endCall(); showCallEndedUI('No one answered');
         }
-      }, 45000);
-    } catch (err) {
-      console.error('Call setup error:', err);
-      endCall();
-      showCallEndedUI('Call failed to start');
+      },45000);
+    }catch(e){
+      console.error(e); endCall(); showCallEndedUI('Call failed to start');
     }
   }
 
-  async function handleIncomingCall({ callType, callId, caller }) {
-    if (isCallActive) {
-      socket.emit('reject-call', { room, callId, reason: 'busy' });
-      return;
+  async function handleIncomingCall({callType,callId,caller}){
+    if(isCallActive){
+      socket.emit('reject-call',{room,callId,reason:'busy'}); return;
     }
-
-    const accept = confirm(`${caller} is calling (${callType}). Accept?`);
-    if (!accept) {
-      socket.emit('reject-call', { room, callId });
-      return;
-    }
-
-    isCallActive = true;
-    currentCallType = callType;
-    currentCallId = callId;
-    iceQueues[callId] = {};
-
-    try {
-      localStream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: callType === 'video' ? { facingMode: 'user' } : false
+    const accept=confirm(`${caller} is calling (${callType}). Accept?`);
+    if(!accept){ socket.emit('reject-call',{room,callId}); return; }
+    isCallActive=true; currentCallType=callType; currentCallId=callId; iceQueues[callId]={};
+    try{
+      localStream=await navigator.mediaDevices.getUserMedia({
+        audio:true,video:callType==='video'?{facingMode:'user'}:false
       });
       showCallUI(callType);
-      socket.emit('accept-call', { room, callId });
-      socket.emit('get-call-participants', { room, callId });
-    } catch (err) {
-      console.error('Error accepting call:', err);
-      endCall();
-    }
+      socket.emit('accept-call',{room,callId});
+      socket.emit('get-call-participants',{room,callId});
+    }catch(e){ console.error(e); endCall(); }
   }
 
-  function endCall() {
+  function endCall(){
     Object.keys(peerConnections).forEach(removePeerConnection);
-
-    if (localStream) {
-      localStream.getTracks().forEach(t => t.stop());
-      localStream = null;
-    }
-
-    isCallActive = false;
-    currentCallId = null;
-    currentCallType = null;
-    clearTimeout(callTimeout);
+    if(localStream){ localStream.getTracks().forEach(t=>t.stop()); localStream=null; }
+    isCallActive=false; currentCallId=null; currentCallType=null; clearTimeout(callTimeout);
     hideCallUI();
-
-    socket.emit('end-call', { room, callId: currentCallId });
+    socket.emit('end-call',{room,callId:currentCallId});
   }
 
-  function removePeerConnection(userId) {
-    if (peerConnections[userId]) {
-      peerConnections[userId].close();
-      delete peerConnections[userId];
-    }
-    const vidC = document.getElementById(`remote-container-${userId}`);
-    if (vidC) vidC.remove();
-    const audC = document.getElementById(`audio-container-${userId}`);
-    if (audC) audC.remove();
+  function removePeerConnection(userId){
+    if(peerConnections[userId]){ peerConnections[userId].close(); delete peerConnections[userId]; }
+    const v=document.getElementById(`remote-container-${userId}`);
+    if(v) v.remove();
+    const a=document.getElementById(`audio-container-${userId}`);
+    if(a) a.remove();
     delete remoteStreams[userId];
   }
 
   // ======================
   // SOCKET HANDLERS
   // ======================
-  socket.on('connect', () => socket.emit('joinRoom', { username, room }));
+  socket.on('connect',()=>socket.emit('joinRoom',{username,room}));
 
-  socket.on('message', msg => {
-    if (msg.username !== username && !isMuted) notificationSound.play();
+  socket.on('message',msg=>{
+    if(msg.username!==username&&!isMuted) notificationSound.play();
     addMessage(msg);
   });
 
-  socket.on('typing', ({ username: u }) => {
-    if (u !== username) showTypingIndicator(u);
+  socket.on('typing',({username:u})=>{
+    if(u!==username) showTypingIndicator(u);
   });
-  socket.on('stopTyping', () => {
-    document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
-  });
+  socket.on('stopTyping',()=>document.querySelectorAll('.typing-indicator').forEach(el=>el.remove()));
 
-  socket.on('incoming-call', handleIncomingCall);
+  socket.on('incoming-call',handleIncomingCall);
 
-  socket.on('offer', async ({ offer, userId, callId }) => {
-    if (callId !== currentCallId || !isCallActive) return;
+  socket.on('offer',async({offer,userId,callId})=>{
+    if(callId!==currentCallId||!isCallActive) return;
     await establishPeerConnection(userId);
-    const pc = peerConnections[userId];
+    const pc=peerConnections[userId];
     await pc.setRemoteDescription(offer);
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    socket.emit('answer', { answer, room, callId, targetUser: userId });
+    const ans=await pc.createAnswer();
+    await pc.setLocalDescription(ans);
+    socket.emit('answer',{answer:ans,room,callId,targetUser:userId});
   });
 
-  socket.on('answer', ({ answer, userId, callId }) => {
-    if (callId !== currentCallId) return;
+  socket.on('answer',({answer,userId,callId})=>{
+    if(callId!==currentCallId) return;
     peerConnections[userId]?.setRemoteDescription(answer);
   });
 
-  socket.on('ice-candidate', ({ candidate, userId, callId }) => {
-    if (!peerConnections[userId]) {
-      iceQueues[callId]      = iceQueues[callId] || {};
-      iceQueues[callId][userId] = iceQueues[callId][userId] || [];
+  socket.on('ice-candidate',({candidate,userId,callId})=>{
+    if(!peerConnections[userId]){
+      iceQueues[callId]=iceQueues[callId]||{};
+      iceQueues[callId][userId]=iceQueues[callId][userId]||[];
       iceQueues[callId][userId].push(candidate);
     } else {
       peerConnections[userId].addIceCandidate(candidate).catch(console.error);
     }
   });
 
-  socket.on('call-participants', ({ participants, callId }) => {
-    if (callId !== currentCallId) return;
-    participants.forEach(uid => {
-      if (uid !== username && !peerConnections[uid]) {
-        const initiator = participants.indexOf(username) < participants.indexOf(uid);
-        establishPeerConnection(uid, initiator);
+  socket.on('call-participants',({participants,callId})=>{
+    if(callId!==currentCallId) return;
+    participants.forEach(uid=>{
+      if(uid!==username&&!peerConnections[uid]){
+        const init=participants.indexOf(username)<participants.indexOf(uid);
+        establishPeerConnection(uid,init);
       }
     });
   });
 
-  socket.on('end-call', () => {
-    endCall();
-    showCallEndedUI('Call ended');
+  socket.on('accept-call',async({userId,callId})=>{
+    if(callId!==currentCallId||!isCallActive) return;
+    await establishPeerConnection(userId,true);
   });
 
-  socket.on('reject-call', ({ reason }) => {
-    endCall();
-    showCallEndedUI(reason === 'busy' ? 'User busy' : 'Call rejected');
+  socket.on('end-call',()=>{
+    endCall(); showCallEndedUI('Call ended');
   });
 
-  socket.on('user-left-call', ({ userId }) => removePeerConnection(userId));
+  socket.on('reject-call',({reason})=>{
+    endCall(); showCallEndedUI(reason==='busy'?'User busy':'Call rejected');
+  });
+
+  socket.on('user-left-call',({userId})=>removePeerConnection(userId));
 
   // ======================
   // CHAT FORM SUBMIT
   // ======================
-  document.getElementById('chat-form').onsubmit = e => {
+  document.getElementById('chat-form').onsubmit=e=>{
     e.preventDefault();
-    const text = msgInput.value.trim();
-    if (!text) return;
-    socket.emit('chatMessage', { text, replyTo, room });
-    msgInput.value = '';
-    replyTo = null;
-    replyPreview.classList.add('d-none');
+    const text=msgInput.value.trim();
+    if(!text) return;
+    socket.emit('chatMessage',{text,replyTo,room});
+    msgInput.value=''; replyTo=null; replyPreview.classList.add('d-none');
   };
 
   // ======================
   // CALL BUTTONS
   // ======================
-  videoCallBtn.onclick = () => startCall('video');
-  audioCallBtn.onclick = () => startCall('audio');
+  videoCallBtn.onclick=()=>startCall('video');
+  audioCallBtn.onclick=()=>startCall('audio');
 
   // ======================
   // CLEANUP ON UNLOAD
   // ======================
-  window.addEventListener('beforeunload', () => {
-    if (isCallActive) socket.emit('end-call', { room, callId: currentCallId });
+  window.addEventListener('beforeunload',()=>{
+    if(isCallActive) socket.emit('end-call',{room,callId:currentCallId});
   });
 
   // ======================
   // INIT
   // ======================
-  (function init() {
-    if (!username || !room) {
-      alert('Missing username or room!');
-      return;
-    }
+  (function init(){
+    if(!username||!room){ alert('Missing username or room!'); return; }
     initDarkMode();
-    roomNameElem.textContent = room;
-
-    // append video CSS
-    const style = document.createElement('style');
-    style.textContent = `
-      .video-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit,minmax(300px,1fr));
-        gap: 10px;
-        padding: 10px;
-        width: 100%; height: calc(100% - 60px);
-        overflow-y: auto;
-      }
-      .video-container { position: relative; background: #000; border-radius: 8px; overflow: hidden; aspect-ratio: 4/3; }
-      .video-container video { width:100%; height:100%; object-fit:cover; }
-      .video-user-label { position:absolute; bottom:5px; left:5px; color:#fff; background:rgba(0,0,0,0.5); padding:2px 8px; border-radius:4px; font-size:12px; }
-      .local-video-container { order:-1; }
-      .audio-container { display:flex; flex-direction:column; align-items:center; justify-content:center; background:#f0f0f0; border-radius:8px; padding:20px; }
-      .audio-icon { font-size:24px; margin-bottom:10px; }
+    roomNameElem.textContent=room;
+    const style=document.createElement('style');
+    style.textContent=`
+      .video-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px;
+        padding:10px;width:100%;height:calc(100%-60px);overflow-y:auto; }
+      .video-container {position:relative;background:#000;border-radius:8px;overflow:hidden;aspect-ratio:4/3;}
+      .video-container video {width:100%;height:100%;object-fit:cover;}
+      .video-user-label{position:absolute;bottom:5px;left:5px;color:#fff;
+        background:rgba(0,0,0,0.5);padding:2px 8px;border-radius:4px;font-size:12px;}
+      .local-video-container {order:-1;}
+      .audio-container{display:flex;flex-direction:column;align-items:center;
+        justify-content:center;background:#f0f0f0;border-radius:8px;padding:20px;}
+      .audio-icon{font-size:24px;margin-bottom:10px;}
     `;
     document.head.appendChild(style);
   })();
