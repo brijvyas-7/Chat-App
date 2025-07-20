@@ -1,3 +1,89 @@
+// Add this near the top of your file
+async function addLocalTracks(pc, localStream) {
+  for (const track of localStream.getTracks()) {
+    pc.addTrack(track, localStream);
+  }
+}
+
+// ...
+
+async function establishPeerConnection(userId, isInitiator = false) {
+  if (!isCallActive || peerConnections[userId]) return;
+
+  const pc = new RTCPeerConnection({ iceServers: [ /* your STUNs */] });
+  peerConnections[userId] = pc;
+
+  pc.oniceconnectionstatechange = () => {
+    if (['disconnected', 'failed'].includes(pc.iceConnectionState)) {
+      cleanupPeer(userId);
+    }
+  };
+
+  pc.ontrack = (event) => {
+    if (event.streams.length) {
+      const stream = event.streams[0];
+      remoteStreams[userId] = stream;
+      if (currentCallType === 'video') {
+        addVideoElement('remote', userId, stream);
+      } else {
+        addAudioElement(userId);
+      }
+    }
+  };
+
+  pc.onnegotiationneeded = async () => {
+    console.log('🔁 negotiationneeded');
+    try {
+      await pc.setLocalDescription(await pc.createOffer());
+      socket.emit('offer', {
+        offer: pc.localDescription,
+        room,
+        callId: currentCallId,
+        targetUser: userId
+      });
+    } catch (err) {
+      console.error('Negotiation error:', err);
+    }
+  };
+
+  // 1️⃣ Add local tracks *before* negotiation
+  if (localStream) await addLocalTracks(pc, localStream);
+
+  // 2️⃣ If initiator, trigger negotiation
+  if (isInitiator) {
+    try {
+      await pc.setLocalDescription(await pc.createOffer());
+      socket.emit('offer', {
+        offer: pc.localDescription,
+        room,
+        callId: currentCallId,
+        targetUser: userId
+      });
+    } catch (err) {
+      console.error('Offer error:', err);
+      cleanupPeer(userId);
+    }
+  }
+
+  pc.onicecandidate = (e) => {
+    if (e.candidate) {
+      socket.emit('ice-candidate', {
+        candidate: e.candidate,
+        room,
+        callId: currentCallId,
+        targetUser: userId
+      });
+    }
+  };
+
+  if (iceQueues[currentCallId]?.[userId]?.length) {
+    for (const c of iceQueues[currentCallId][userId]) {
+      await pc.addIceCandidate(c).catch(console.error);
+    }
+    iceQueues[currentCallId][userId] = [];
+  }
+}
+
 // ✅ COMPLETE WORKING VIDEO CHAT IMPLEMENTATION
 window.addEventListener('DOMContentLoaded', () => {
   const socket = io('https://chat-app-a3m9.onrender.com', {
@@ -404,16 +490,16 @@ window.addEventListener('DOMContentLoaded', () => {
     // Track the connection state
     peerConnection.oniceconnectionstatechange = () => {
       console.log(`ICE state (${userId}): ${peerConnection.iceConnectionState}`);
-      if (peerConnection.iceConnectionState === 'disconnected' || 
-          peerConnection.iceConnectionState === 'failed') {
+      if (peerConnection.iceConnectionState === 'disconnected' ||
+        peerConnection.iceConnectionState === 'failed') {
         removePeerConnection(userId);
       }
     };
 
     peerConnection.onconnectionstatechange = () => {
       console.log(`Connection state (${userId}): ${peerConnection.connectionState}`);
-      if (peerConnection.connectionState === 'disconnected' || 
-          peerConnection.connectionState === 'failed') {
+      if (peerConnection.connectionState === 'disconnected' ||
+        peerConnection.connectionState === 'failed') {
         removePeerConnection(userId);
       }
     };
