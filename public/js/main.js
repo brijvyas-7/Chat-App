@@ -1,4 +1,4 @@
-// Complete Chat Application with Video Calling (Fixed Version)
+// Complete Chat Application with Video Calling (Full Version)
 window.addEventListener('DOMContentLoaded', () => {
   // State Management
   const state = {
@@ -22,8 +22,10 @@ window.addEventListener('DOMContentLoaded', () => {
     SWIPE_THRESHOLD: 60,
     MAX_RECONNECT_ATTEMPTS: 5,
     reconnectAttempts: 0,
-    makingOffer: false, // Added for negotiation control
-    ignoreOffer: false // Added for offer collision handling
+    makingOffer: false,
+    ignoreOffer: false,
+    typingTimeout: null,
+    debugMode: true
   };
 
   // DOM Elements
@@ -42,6 +44,13 @@ window.addEventListener('DOMContentLoaded', () => {
     videoCallContainer: document.getElementById('video-call-container'),
     connectionStatus: document.getElementById('connection-status'),
     chatForm: document.getElementById('chat-form')
+  };
+
+  // Debug Logger
+  const debug = {
+    log: (...args) => state.debugMode && console.log('[DEBUG]', ...args),
+    error: (...args) => state.debugMode && console.error('[DEBUG]', ...args),
+    warn: (...args) => state.debugMode && console.warn('[DEBUG]', ...args)
   };
 
   // Media Elements
@@ -86,11 +95,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
     playNotificationSound: () => {
       if (document.hasUserInteraction) {
-        media.notificationSound.play().catch(e => console.log('Notification sound error:', e));
+        media.notificationSound.play().catch(e => debug.error('Notification sound error:', e));
       } else {
         window.pendingNotifications = window.pendingNotifications || [];
         window.pendingNotifications.push(() => {
-          media.notificationSound.play().catch(e => console.log('Notification sound error:', e));
+          media.notificationSound.play().catch(e => debug.error('Notification sound error:', e));
         });
       }
     }
@@ -99,7 +108,9 @@ window.addEventListener('DOMContentLoaded', () => {
   // Message Handling
   const messageHandler = {
     addMessage: (msg) => {
+      debug.log('Adding message:', msg);
       document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
+      
       const el = document.createElement('div');
       const isMe = msg.username === username;
       const isSys = msg.username === 'ChatApp Bot';
@@ -149,6 +160,7 @@ window.addEventListener('DOMContentLoaded', () => {
     },
 
     setupReply: (u, id, t) => {
+      debug.log('Setting up reply to:', u, id, t);
       state.replyTo = { id, username: u, text: t };
       elements.replyUser.textContent = u;
       elements.replyText.textContent = t.length > 30 ? t.substr(0, 30) + '...' : t;
@@ -157,6 +169,7 @@ window.addEventListener('DOMContentLoaded', () => {
     },
 
     showTypingIndicator: (u) => {
+      debug.log('Showing typing indicator for:', u);
       if (!document.querySelector('.typing-indicator')) {
         const d = document.createElement('div');
         d.className = 'typing-indicator other';
@@ -171,52 +184,93 @@ window.addEventListener('DOMContentLoaded', () => {
         elements.chatMessages.appendChild(d);
         elements.chatMessages.scrollTo({ top: elements.chatMessages.scrollHeight, behavior: 'smooth' });
       }
+    },
+
+    handleTyping: () => {
+      const now = Date.now();
+      if (now - state.lastTypingUpdate > 1000) {
+        socket.emit('typing', { username, room });
+        state.lastTypingUpdate = now;
+      }
+      
+      clearTimeout(state.typingTimeout);
+      state.typingTimeout = setTimeout(() => {
+        socket.emit('stopTyping', { username, room });
+      }, 2000);
     }
   };
 
-  // WebRTC Functions (Fixed Version)
+  // WebRTC Functions
   const webrtc = {
-    createPeerConnection: () => {
-      return new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ],
-        sdpSemantics: 'unified-plan', // Critical fix
-        bundlePolicy: 'max-bundle'
-      });
-    },
+    createPeerConnection: (userId) => {
+      debug.log(`Creating peer connection for ${userId}`);
+      try {
+        const pc = new RTCPeerConnection({
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' }
+          ],
+          iceTransportPolicy: 'all',
+          bundlePolicy: 'max-bundle',
+          rtcpMuxPolicy: 'require'
+        });
 
-    addLocalTracks: async (pc, stream) => {
-      for (const t of stream.getTracks()) {
-        try {
-          pc.addTrack(t, stream);
-        } catch (err) {
-          console.error('Error adding track:', err);
-        }
+        pc.onconnectionstatechange = () => {
+          debug.log(`${userId} connection state: ${pc.connectionState}`);
+          if (pc.connectionState === 'failed') {
+            webrtc.removePeerConnection(userId);
+          }
+        };
+
+        pc.oniceconnectionstatechange = () => {
+          debug.log(`${userId} ICE state: ${pc.iceConnectionState}`);
+          if (['disconnected', 'failed'].includes(pc.iceConnectionState)) {
+            webrtc.removePeerConnection(userId);
+          }
+        };
+
+        pc.onsignalingstatechange = () => {
+          debug.log(`${userId} signaling state: ${pc.signalingState}`);
+        };
+
+        pc.onicecandidate = (event) => {
+          if (event.candidate) {
+            debug.log(`Sending ICE candidate to ${userId}`);
+            socket.emit('ice-candidate', {
+              candidate: event.candidate,
+              room,
+              callId: state.currentCallId,
+              targetUser: userId
+            });
+          }
+        };
+
+        pc.ontrack = (event) => {
+          debug.log(`Track event from ${userId}`);
+          if (event.streams && event.streams.length > 0) {
+            const stream = event.streams.find(s => s.getVideoTracks().length > 0) || event.streams[0];
+            webrtc.attachRemoteStream(userId, stream);
+          }
+        };
+
+        return pc;
+      } catch (error) {
+        debug.error(`Failed to create peer connection:`, error);
+        return null;
       }
     },
 
     attachRemoteStream: (userId, stream) => {
-      if (!stream) {
-        console.error('No stream provided for user:', userId);
-        return;
-      }
-
-      console.log('Attaching remote stream for:', userId, stream);
-
-      // Check if video tracks exist
-      const hasVideo = stream.getVideoTracks().length > 0;
-      console.log('Remote stream has video:', hasVideo);
+      debug.log(`Attaching remote stream for ${userId}`);
+      if (!stream) return;
 
       state.remoteStreams[userId] = stream;
 
-      if (state.currentCallType === 'video' && hasVideo) {
-        // Remove any existing video element first
+      if (state.currentCallType === 'video' && stream.getVideoTracks().length > 0) {
         const existing = document.getElementById(`remote-container-${userId}`);
         if (existing) existing.remove();
 
-        // Create new video element
         const container = document.createElement('div');
         container.className = 'video-container';
         container.id = `remote-container-${userId}`;
@@ -236,106 +290,69 @@ window.addEventListener('DOMContentLoaded', () => {
 
         video.srcObject = stream;
         video.onloadedmetadata = () => {
-          console.log('Remote video metadata loaded');
-          video.play().catch(e => console.error('Remote video play failed:', e));
+          video.play().catch(e => {
+            debug.error('Video play failed:', e);
+            webrtc.showVideoPlayButton(container, video);
+          });
         };
       } else {
-        // Handle audio-only case
         webrtc.addAudioElement(userId);
       }
     },
 
     establishPeerConnection: async (userId, isInitiator = false) => {
+      debug.log(`Establishing connection with ${userId}, initiator: ${isInitiator}`);
       if (!state.isCallActive || state.peerConnections[userId]) return;
 
-      try {
-        const pc = webrtc.createPeerConnection();
-        state.peerConnections[userId] = pc;
+      const pc = webrtc.createPeerConnection(userId);
+      if (!pc) return;
 
-        pc.oniceconnectionstatechange = () => {
-          console.log('ICE connection state:', pc.iceConnectionState);
-          if (['disconnected', 'failed'].includes(pc.iceConnectionState)) {
-            webrtc.removePeerConnection(userId);
-          }
-        };
+      state.peerConnections[userId] = pc;
 
-        pc.ontrack = (event) => {
-          console.log('Received track event:', event);
-          if (event.streams && event.streams.length > 0) {
-            console.log('Streams received:', event.streams);
-            webrtc.attachRemoteStream(userId, event.streams[0]);
-          }
-        };
-
-        pc.onnegotiationneeded = async () => {
+      if (state.localStream) {
+        debug.log('Adding local tracks');
+        state.localStream.getTracks().forEach(track => {
           try {
-            if (state.makingOffer) return;
-            state.makingOffer = true;
-            
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            
-            socket.emit('offer', {
-              offer: pc.localDescription,
-              room,
-              callId: state.currentCallId,
-              targetUser: userId
-            });
+            pc.addTrack(track, state.localStream);
           } catch (err) {
-            console.error('Negotiation error:', err);
-          } finally {
-            state.makingOffer = false;
+            debug.error('Error adding track:', err);
           }
-        };
+        });
+      }
 
-        if (state.localStream) {
-          try {
-            if ('addStream' in pc) {
-              pc.addStream(state.localStream);
-            } else {
-              await webrtc.addLocalTracks(pc, state.localStream);
-            }
-          } catch (err) {
-            console.error('Error adding local stream:', err);
-          }
+      const queue = (state.iceQueues[state.currentCallId] || {})[userId] || [];
+      for (const c of queue) {
+        try {
+          await pc.addIceCandidate(c);
+        } catch (err) {
+          debug.error('Error adding ICE candidate:', err);
         }
+      }
+      if (state.iceQueues[state.currentCallId]) state.iceQueues[state.currentCallId][userId] = [];
 
-        pc.onicecandidate = e => {
-          if (e.candidate) {
-            socket.emit('ice-candidate', {
-              candidate: e.candidate,
-              room,
-              callId: state.currentCallId,
-              targetUser: userId
-            });
-          }
-        };
-
-        // Process any queued ICE candidates
-        const queue = (state.iceQueues[state.currentCallId] || {})[userId] || [];
-        for (const c of queue) {
-          try {
-            await pc.addIceCandidate(c);
-          } catch (err) {
-            console.error('Error adding ICE candidate:', err);
-          }
+      if (isInitiator) {
+        try {
+          state.makingOffer = true;
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          
+          socket.emit('offer', {
+            offer: pc.localDescription,
+            room,
+            callId: state.currentCallId,
+            targetUser: userId
+          });
+        } catch (err) {
+          debug.error('Error creating offer:', err);
+        } finally {
+          state.makingOffer = false;
         }
-        if (state.iceQueues[state.currentCallId]) state.iceQueues[state.currentCallId][userId] = [];
-
-        if (isInitiator) {
-          pc.onnegotiationneeded(); // Trigger initial offer
-        }
-      } catch (err) {
-        console.error('Error establishing peer connection:', err);
       }
     },
 
     addVideoElement: (type, userId, stream, isLocal = false) => {
       const g = document.getElementById('video-grid');
-      if (!g) {
-        console.error('Video grid not found');
-        return;
-      }
+      if (!g) return;
 
       const existing = document.getElementById(`${type}-container-${userId}`);
       if (existing) existing.remove();
@@ -365,14 +382,11 @@ window.addEventListener('DOMContentLoaded', () => {
       if (stream.active) {
         video.srcObject = stream;
         video.onloadedmetadata = () => {
-          console.log(`Video metadata loaded for ${userId}`);
           video.play().catch(e => {
-            console.error(`Video play failed for ${userId}:`, e);
+            debug.error('Video play failed:', e);
             webrtc.showVideoPlayButton(container, video);
           });
         };
-      } else {
-        console.error(`Stream inactive for ${userId}`);
       }
     },
 
@@ -407,17 +421,23 @@ window.addEventListener('DOMContentLoaded', () => {
       playBtn.onclick = () => {
         video.play()
           .then(() => playBtn.remove())
-          .catch(e => console.error('Still cannot play:', e));
+          .catch(e => debug.error('Still cannot play:', e));
       };
       container.appendChild(playBtn);
     },
 
     removePeerConnection: (userId) => {
+      debug.log(`Removing peer connection for ${userId}`);
       if (state.peerConnections[userId]) {
         try {
-          state.peerConnections[userId].close();
+          // Stop all tracks before closing
+          const pc = state.peerConnections[userId];
+          pc.getSenders().forEach(sender => {
+            if (sender.track) sender.track.stop();
+          });
+          pc.close();
         } catch (err) {
-          console.error('Error closing peer connection:', err);
+          debug.error('Error closing peer connection:', err);
         }
         delete state.peerConnections[userId];
       }
@@ -478,7 +498,7 @@ window.addEventListener('DOMContentLoaded', () => {
             <i class="fas fa-video${state.isVideoOff ? '-slash' : ''}"></i>
           </button>
           <button id="flip-camera-btn" class="control-btn flip-btn">
-            <i class="fas fa-code"></i>
+            <i class="fas fa-camera-retro"></i>
           </button>
         `;
       }
@@ -526,11 +546,7 @@ window.addEventListener('DOMContentLoaded', () => {
       try {
         // Test permissions first
         const testStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          },
+          audio: true,
           video: t === 'video' ? {
             facingMode: 'user',
             width: { ideal: 1280 },
@@ -563,12 +579,9 @@ window.addEventListener('DOMContentLoaded', () => {
           } : false
         });
 
-        console.log('Local stream tracks:');
-        state.localStream.getTracks().forEach(track => {
-          console.log(track.kind, track.readyState, track.enabled);
-        });
-
+        debug.log('Local stream tracks:', state.localStream.getTracks());
         callManager.showCallUI(t);
+        
         socket.emit('call-initiate', {
           room,
           callId: state.currentCallId,
@@ -583,7 +596,7 @@ window.addEventListener('DOMContentLoaded', () => {
           }
         }, 45000);
       } catch (err) {
-        console.error('Call start failed:', err);
+        debug.error('Call start failed:', err);
         callManager.endCall();
         callManager.showCallEndedUI('Call failed to start: ' + err.message);
       }
@@ -624,17 +637,22 @@ window.addEventListener('DOMContentLoaded', () => {
         socket.emit('accept-call', { room, callId });
         socket.emit('get-call-participants', { room, callId });
       } catch (e) {
-        console.error(e);
+        debug.error('Media access failed:', e);
         callManager.endCall();
         callManager.showCallEndedUI('Failed to access media devices');
       }
     },
 
     endCall: () => {
+      debug.log('Ending call and cleaning up resources');
       Object.keys(state.peerConnections).forEach(webrtc.removePeerConnection);
 
       if (state.localStream) {
-        state.localStream.getTracks().forEach(t => t.stop());
+        debug.log('Stopping local stream tracks');
+        state.localStream.getTracks().forEach(t => {
+          t.stop();
+          debug.log(`Stopped ${t.kind} track`);
+        });
         state.localStream = null;
       }
 
@@ -704,7 +722,7 @@ window.addEventListener('DOMContentLoaded', () => {
         const lv = document.getElementById(`local-video-${username}`);
         if (lv) lv.srcObject = state.localStream;
       } catch (e) {
-        console.error('Camera flip failed:', e);
+        debug.error('Camera flip failed:', e);
       }
     },
 
@@ -732,13 +750,16 @@ window.addEventListener('DOMContentLoaded', () => {
       elements.replyPreview.classList.add('d-none');
     });
 
+    // Enhanced swipe-to-reply with debugging
     elements.chatMessages.addEventListener('touchstart', e => {
       state.touchStartX = e.changedTouches[0].screenX;
+      debug.log('Touch started at:', state.touchStartX);
     }, { passive: true });
 
     elements.chatMessages.addEventListener('touchend', e => {
       state.touchEndX = e.changedTouches[0].screenX;
       const diffX = state.touchStartX - state.touchEndX;
+      debug.log(`Touch ended at: ${state.touchEndX}, diff: ${diffX}`);
 
       if (Math.abs(diffX) > state.SWIPE_THRESHOLD) {
         const messageElement = document.elementFromPoint(
@@ -750,17 +771,29 @@ window.addEventListener('DOMContentLoaded', () => {
           const u = messageElement.querySelector('.meta strong').textContent;
           const t = messageElement.querySelector('.text').textContent;
           const id = messageElement.id;
+          debug.log(`Swiped to reply to message ${id} from ${u}`);
           messageHandler.setupReply(u, id, t);
         }
       }
     }, { passive: true });
+
+    // Typing indicator
+    elements.msgInput.addEventListener('input', () => {
+      messageHandler.handleTyping();
+    });
 
     elements.chatForm.addEventListener('submit', e => {
       e.preventDefault();
       const txt = elements.msgInput.value.trim();
       if (!txt) return;
 
-      socket.emit('chatMessage', { text: txt, replyTo: state.replyTo, room });
+      debug.log('Sending message:', txt);
+      socket.emit('chatMessage', { 
+        text: txt, 
+        replyTo: state.replyTo, 
+        room 
+      });
+      
       elements.msgInput.value = '';
       state.replyTo = null;
       elements.replyPreview.classList.add('d-none');
@@ -788,7 +821,6 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    // Detect first user interaction for audio playback
     document.addEventListener('click', () => {
       document.hasUserInteraction = true;
       if (window.pendingNotifications) {
@@ -798,7 +830,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }, { once: true });
   };
 
-  // Socket.IO Handlers (Fixed Version)
+  // Socket.IO Handlers
   const setupSocketHandlers = () => {
     socket.on('connect', () => {
       state.reconnectAttempts = 0;
@@ -811,7 +843,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     socket.on('disconnect', (reason) => {
       utils.updateConnectionStatus({ text: 'Disconnected', type: 'disconnected' });
-      console.log('Disconnected:', reason);
+      debug.log('Disconnected:', reason);
       if (reason === 'io server disconnect') {
         setTimeout(() => socket.connect(), 1000);
       }
@@ -833,7 +865,7 @@ window.addEventListener('DOMContentLoaded', () => {
     });
 
     socket.on('connect_error', (err) => {
-      console.error('Connection error:', err);
+      debug.error('Connection error:', err);
       utils.updateConnectionStatus({
         text: 'Connection error',
         type: 'error'
@@ -841,6 +873,7 @@ window.addEventListener('DOMContentLoaded', () => {
     });
 
     socket.on('message', msg => {
+      debug.log('Received message:', msg);
       if (msg.username !== username && !state.isMuted) {
         utils.playNotificationSound();
       }
@@ -848,16 +881,19 @@ window.addEventListener('DOMContentLoaded', () => {
     });
 
     socket.on('typing', ({ username: u }) => {
+      debug.log(`${u} is typing`);
       if (u !== username) messageHandler.showTypingIndicator(u);
     });
 
     socket.on('stopTyping', () => {
+      debug.log('Typing stopped');
       document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
     });
 
     socket.on('incoming-call', callManager.handleIncomingCall);
 
     socket.on('offer', async ({ offer, userId, callId }) => {
+      debug.log(`Received offer from ${userId}`);
       if (callId !== state.currentCallId || !state.isCallActive) return;
 
       const pc = state.peerConnections[userId] || await webrtc.establishPeerConnection(userId);
@@ -880,11 +916,12 @@ window.addEventListener('DOMContentLoaded', () => {
           });
         }
       } catch (err) {
-        console.error('Offer handling failed:', err);
+        debug.error('Offer handling failed:', err);
       }
     });
 
     socket.on('answer', async ({ answer, userId, callId }) => {
+      debug.log(`Received answer from ${userId}`);
       if (callId !== state.currentCallId) return;
       const pc = state.peerConnections[userId];
       if (!pc) return;
@@ -892,23 +929,25 @@ window.addEventListener('DOMContentLoaded', () => {
       try {
         await pc.setRemoteDescription(answer);
       } catch (err) {
-        console.error('Answer handling failed:', err);
+        debug.error('Answer handling failed:', err);
       }
     });
 
     socket.on('ice-candidate', ({ candidate, userId, callId }) => {
+      debug.log(`Received ICE candidate from ${userId}`);
       if (!state.peerConnections[userId]) {
         state.iceQueues[callId] = state.iceQueues[callId] || {};
         state.iceQueues[callId][userId] = state.iceQueues[callId][userId] || [];
         state.iceQueues[callId][userId].push(candidate);
       } else {
         state.peerConnections[userId].addIceCandidate(candidate).catch(err => {
-          console.error('Error adding ICE candidate:', err);
+          debug.error('Error adding ICE candidate:', err);
         });
       }
     });
 
     socket.on('call-participants', ({ participants, callId }) => {
+      debug.log('Call participants:', participants);
       if (callId !== state.currentCallId) return;
 
       participants.forEach(uid => {
@@ -920,30 +959,34 @@ window.addEventListener('DOMContentLoaded', () => {
     });
 
     socket.on('accept-call', async ({ userId, callId }) => {
+      debug.log(`${userId} accepted call`);
       if (callId !== state.currentCallId || !state.isCallActive) return;
       await webrtc.establishPeerConnection(userId, true);
     });
 
     socket.on('end-call', () => {
+      debug.log('Call ended by remote peer');
       callManager.endCall();
       callManager.showCallEndedUI('Call ended');
     });
 
     socket.on('reject-call', ({ reason }) => {
+      debug.log(`Call rejected: ${reason}`);
       callManager.endCall();
       callManager.showCallEndedUI(reason === 'busy' ? 'User busy' : 'Call rejected');
     });
 
     socket.on('user-left-call', ({ userId }) => {
+      debug.log(`${userId} left the call`);
       webrtc.removePeerConnection(userId);
     });
 
     socket.on('mute-state', ({ userId, isAudioMuted }) => {
-      console.log(`User ${userId} ${isAudioMuted ? 'muted' : 'unmuted'} audio`);
+      debug.log(`User ${userId} ${isAudioMuted ? 'muted' : 'unmuted'} audio`);
     });
 
     socket.on('video-state', ({ userId, isVideoOff }) => {
-      console.log(`User ${userId} ${isVideoOff ? 'disabled' : 'enabled'} video`);
+      debug.log(`User ${userId} ${isVideoOff ? 'disabled' : 'enabled'} video`);
     });
   };
 
@@ -955,6 +998,19 @@ window.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    // Add debug commands
+    window.debugWebRTC = () => {
+      console.group('WebRTC State');
+      console.log('Current Call ID:', state.currentCallId);
+      console.log('Call Active:', state.isCallActive);
+      console.log('Call Type:', state.currentCallType);
+      console.log('Local Stream:', state.localStream);
+      console.log('Peer Connections:', state.peerConnections);
+      console.log('Remote Streams:', state.remoteStreams);
+      console.groupEnd();
+    };
+
+    debug.log('Initializing application...');
     utils.initDarkMode();
     elements.roomName.textContent = room;
     elements.muteBtn.innerHTML = state.isMuted ? '<i class="fas fa-bell-slash"></i>' : '<i class="fas fa-bell"></i>';
@@ -1112,6 +1168,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     setupEventListeners();
     setupSocketHandlers();
+    debug.log('Application initialization complete');
   };
 
   init();
