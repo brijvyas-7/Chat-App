@@ -1,4 +1,3 @@
-
 // Complete Chat Application with Video Calling (Fixed Version)
 window.addEventListener('DOMContentLoaded', () => {
   // State Management
@@ -74,8 +73,7 @@ window.addEventListener('DOMContentLoaded', () => {
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
     randomizationFactor: 0.5,
-    timeout: 20000,
-    transports: ['websocket', 'polling'] // Added for better mobile support
+    timeout: 20000
   });
 
   // Utility Functions
@@ -113,25 +111,6 @@ window.addEventListener('DOMContentLoaded', () => {
       hours = hours % 12;
       hours = hours ? hours : 12;
       return `${hours}:${minutes} ${ampm}`;
-    },
-
-    // New: Get media constraints based on call type
-    getMediaConstraints: (type) => {
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      return {
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          channelCount: 1
-        },
-        video: type === 'video' ? {
-          facingMode: state.currentFacingMode,
-          width: isMobile ? { ideal: 640, max: 1280 } : { ideal: 1280, max: 1920 },
-          height: isMobile ? { ideal: 480, max: 720 } : { ideal: 720, max: 1080 },
-          frameRate: { ideal: 24, max: 30 }
-        } : false
-      };
     }
   };
 
@@ -230,7 +209,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  // WebRTC Functions (Fixed Version)
+  // WebRTC Functions
   const webrtc = {
     createPeerConnection: (userId) => {
       debug.log(`Creating peer connection for ${userId}`);
@@ -240,7 +219,6 @@ window.addEventListener('DOMContentLoaded', () => {
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
             { urls: 'stun:stun2.l.google.com:19302' }
-            // Add your TURN server here if available
           ],
           iceTransportPolicy: 'all',
           bundlePolicy: 'max-bundle',
@@ -249,7 +227,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
         pc.onconnectionstatechange = () => {
           debug.log(`${userId} connection state: ${pc.connectionState}`);
-          if (['disconnected', 'failed'].includes(pc.connectionState)) {
+          if (pc.connectionState === 'failed') {
             webrtc.removePeerConnection(userId);
           }
         };
@@ -259,6 +237,8 @@ window.addEventListener('DOMContentLoaded', () => {
           if (pc.iceConnectionState === 'failed') {
             debug.log('ICE connection failed, attempting restart...');
             webrtc.restartIce(userId);
+          } else if (['disconnected', 'failed'].includes(pc.iceConnectionState)) {
+            webrtc.removePeerConnection(userId);
           }
         };
 
@@ -288,14 +268,10 @@ window.addEventListener('DOMContentLoaded', () => {
         };
 
         pc.onnegotiationneeded = async () => {
-          if (state.makingOffer) return;
           debug.log(`Negotiation needed for ${userId}`);
           try {
             state.makingOffer = true;
-            const offer = await pc.createOffer({
-              offerToReceiveAudio: true,
-              offerToReceiveVideo: state.currentCallType === 'video'
-            });
+            const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             socket.emit('offer', {
               offer: pc.localDescription,
@@ -377,8 +353,9 @@ window.addEventListener('DOMContentLoaded', () => {
         return state.peerConnections[userId];
       }
 
+
       const pc = webrtc.createPeerConnection(userId);
-      if (!pc) return null;
+      if (!pc) return;
 
       state.peerConnections[userId] = pc;
 
@@ -409,11 +386,9 @@ window.addEventListener('DOMContentLoaded', () => {
       if (isInitiator) {
         try {
           state.makingOffer = true;
-          const offer = await pc.createOffer({
-            offerToReceiveAudio: true,
-            offerToReceiveVideo: state.currentCallType === 'video'
-          });
+          const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
+
           socket.emit('offer', {
             offer: pc.localDescription,
             room,
@@ -459,7 +434,7 @@ window.addEventListener('DOMContentLoaded', () => {
       container.appendChild(label);
       g.appendChild(container);
 
-      if (stream?.active) {
+      if (stream.active) {
         video.srcObject = stream;
         video.onloadedmetadata = () => {
           video.play().catch(e => {
@@ -511,7 +486,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  // Call Management (Fixed Version)
+  // Call Management
   const callManager = {
     showCallingUI: (t) => {
       elements.videoCallContainer.innerHTML = `
@@ -603,9 +578,15 @@ window.addEventListener('DOMContentLoaded', () => {
       if (state.isCallActive) return;
 
       try {
-        // Test permissions first with mobile-friendly constraints
-        const constraints = utils.getMediaConstraints(t);
-        const testStream = await navigator.mediaDevices.getUserMedia(constraints);
+        // Test permissions first
+        const testStream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: t === 'video' ? {
+            facingMode: 'user',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          } : false
+        });
         testStream.getTracks().forEach(track => track.stop());
       } catch (err) {
         return alert(`Please allow ${t === 'video' ? 'camera and microphone' : 'microphone'} access.`);
@@ -619,8 +600,18 @@ window.addEventListener('DOMContentLoaded', () => {
       callManager.showCallingUI(t);
 
       try {
-        const constraints = utils.getMediaConstraints(t);
-        state.localStream = await navigator.mediaDevices.getUserMedia(constraints);
+        state.localStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          },
+          video: t === 'video' ? {
+            facingMode: 'user',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          } : false
+        });
 
         debug.log('Local stream tracks:', state.localStream.getTracks());
         callManager.showCallUI(t);
@@ -631,11 +622,6 @@ window.addEventListener('DOMContentLoaded', () => {
           callType: t,
           caller: username
         });
-
-        // Get participants after a short delay
-        setTimeout(() => {
-          socket.emit('get-call-participants', { room, callId: state.currentCallId });
-        }, 1000);
 
         state.callTimeout = setTimeout(() => {
           if (Object.keys(state.peerConnections).length === 0) {
@@ -668,8 +654,18 @@ window.addEventListener('DOMContentLoaded', () => {
       state.iceQueues[callId] = {};
 
       try {
-        const constraints = utils.getMediaConstraints(callType);
-        state.localStream = await navigator.mediaDevices.getUserMedia(constraints);
+        state.localStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          },
+          video: callType === 'video' ? {
+            facingMode: 'user',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          } : false
+        });
 
         callManager.showCallUI(callType);
         socket.emit('call-accepted', { room, callId });
@@ -758,8 +754,14 @@ window.addEventListener('DOMContentLoaded', () => {
         state.localStream.getVideoTracks().forEach(t => t.stop());
         state.currentFacingMode = state.currentFacingMode === 'user' ? 'environment' : 'user';
 
-        const constraints = utils.getMediaConstraints('video');
-        const ns = await navigator.mediaDevices.getUserMedia(constraints);
+        const ns = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: {
+            facingMode: state.currentFacingMode,
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        });
 
         state.localStream.getTracks().forEach(t => state.localStream.removeTrack(t));
         ns.getTracks().forEach(t => state.localStream.addTrack(t));
@@ -910,7 +912,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }, { once: true });
   };
 
-  // Socket.IO Handlers (Fixed Version)
+  // Socket.IO Handlers
   const setupSocketHandlers = () => {
     socket.on('connect', () => {
       state.reconnectAttempts = 0;
@@ -983,18 +985,11 @@ window.addEventListener('DOMContentLoaded', () => {
           (state.makingOffer || pc.signalingState !== 'stable');
 
         state.ignoreOffer = !state.isCallActive && offerCollision;
-        if (state.ignoreOffer) {
-          debug.log('Ignoring offer due to collision');
-          return;
-        }
+        if (state.ignoreOffer) return;
 
         await pc.setRemoteDescription(offer);
         if (offer.type === 'offer') {
-          const answer = await pc.createAnswer({
-            offerToReceiveAudio: true,
-            offerToReceiveVideo: state.currentCallType === 'video'
-          });
-          await pc.setLocalDescription(answer);
+          await pc.setLocalDescription(await pc.createAnswer());
           socket.emit('answer', {
             answer: pc.localDescription,
             room,
@@ -1020,158 +1015,342 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-
-
     socket.on('ice-candidate', async ({ candidate, userId, callId }) => {
       debug.log(`Received ICE candidate from ${userId}`);
 
       try {
-        if (callId !== state.currentCallId) {
-          debug.log('ICE candidate for inactive call, ignoring');
-          return;
-        }
-
         const pc = state.peerConnections[userId];
         if (pc) {
-          // If peer connection exists, try to add the candidate immediately
-          if (pc.remoteDescription && pc.remoteDescription.type) {
-            debug.log('Adding ICE candidate immediately');
-            await pc.addIceCandidate(candidate);
-          } else {
-            // Queue the candidate if we don't have remote description yet
-            debug.log('Queuing ICE candidate (no remote description)');
-            state.iceQueues[callId] = state.iceQueues[callId] || {};
-            state.iceQueues[callId][userId] = state.iceQueues[callId][userId] || [];
-            state.iceQueues[callId][userId].push(candidate);
-          }
+          await pc.addIceCandidate(candidate);
+          debug.log('Successfully added ICE candidate');
         } else {
-          // Queue the candidate if we don't have a peer connection yet
-          debug.log('Queuing ICE candidate (no peer connection)');
+          // Queue candidate if peer connection doesn't exist yet
           state.iceQueues[callId] = state.iceQueues[callId] || {};
           state.iceQueues[callId][userId] = state.iceQueues[callId][userId] || [];
           state.iceQueues[callId][userId].push(candidate);
+          debug.log(`Queued ICE candidate for ${userId}`);
         }
       } catch (err) {
-        debug.error('Failed to process ICE candidate:', err);
-      }
-    });
-
-    socket.on('call-rejected', ({ callId, reason, userId }) => {
-      debug.log(`Call rejected by ${userId}: ${reason}`);
-      if (callId === state.currentCallId) {
-        callManager.endCall();
-        callManager.showCallEndedUI(`${userId} declined the call`);
-      }
-    });
-
-    socket.on('call-ended', ({ callId, userId }) => {
-      debug.log(`Call ended by ${userId}`);
-      if (callId === state.currentCallId) {
-        callManager.endCall();
-        callManager.showCallEndedUI(userId === username ? 'Call ended' : `${userId} ended the call`);
+        debug.error('Error adding ICE candidate:', err);
       }
     });
 
     socket.on('call-participants', ({ participants, callId }) => {
-      debug.log(`Received call participants: ${participants.join(', ')}`);
+      debug.log('Call participants:', participants);
       if (callId !== state.currentCallId) return;
 
-      participants.forEach(async userId => {
-        if (userId !== username && !state.peerConnections[userId]) {
-          await webrtc.establishPeerConnection(userId, true);
+      participants.forEach(uid => {
+        if (uid !== username && !state.peerConnections[uid]) {
+          const init = participants.indexOf(username) < participants.indexOf(uid);
+          webrtc.establishPeerConnection(uid, init);
         }
       });
     });
 
-    socket.on('user-joined', ({ username: u, time }) => {
-      messageHandler.addMessage({
-        username: 'ChatApp Bot',
-        text: `${u} joined the chat`,
-        time,
-        id: utils.generateId()
-      });
+    socket.on('call-accepted', async ({ userId, callId }) => {
+      debug.log(`✅ call-accepted from ${userId}`);
+      if (callId !== state.currentCallId || !state.isCallActive) return;
+      // CORRECT: caller now initiates the WebRTC handshake
+      await webrtc.establishPeerConnection(userId, true);
     });
 
-    socket.on('user-left', ({ username: u, time }) => {
-      messageHandler.addMessage({
-        username: 'ChatApp Bot',
-        text: `${u} left the chat`,
-        time,
-        id: utils.generateId()
-      });
 
-      // Clean up peer connections if the user was in a call
-      if (state.isCallActive && state.peerConnections[u]) {
-        webrtc.removePeerConnection(u);
-      }
+    socket.on('end-call', () => {
+      debug.log('Call ended by remote peer');
+      callManager.endCall();
+      callManager.showCallEndedUI('Call ended');
     });
 
-    socket.on('mute-state-changed', ({ userId, isAudioMuted }) => {
-      if (userId === username) return;
-      const label = document.querySelector(`#remote-container-${userId} .video-user-label`);
-      if (label) {
-        label.innerHTML = `${userId} ${isAudioMuted ? '🔇' : '🎤'}`;
-      }
+    socket.on('reject-call', ({ reason }) => {
+      debug.log(`Call rejected: ${reason}`);
+      callManager.endCall();
+      callManager.showCallEndedUI(reason === 'busy' ? 'User busy' : 'Call rejected');
     });
 
-    socket.on('video-state-changed', ({ userId, isVideoOff }) => {
-      if (userId === username) return;
-      const video = document.querySelector(`#remote-video-${userId}`);
-      if (video) {
-        video.style.display = isVideoOff ? 'none' : 'block';
-        const label = document.querySelector(`#remote-container-${userId} .video-user-label`);
-        if (label) {
-          label.innerHTML = `${userId} ${isVideoOff ? '📷❌' : '📷'}`;
-        }
-      }
+    socket.on('user-left-call', ({ userId }) => {
+      debug.log(`${userId} left the call`);
+      webrtc.removePeerConnection(userId);
     });
 
-    socket.on('message-seen', ({ messageId, seenBy }) => {
-      const msgEl = document.getElementById(messageId);
-      if (msgEl) {
-        const seen = seenBy || [];
-        const icon = seen.length > 1 ? '✓✓' : '✓';
-        const names = seen.map(u => u === username ? 'You' : u).join(', ');
-
-        let statusEl = msgEl.querySelector('.message-status');
-        if (!statusEl) {
-          statusEl = document.createElement('div');
-          statusEl.className = 'message-status';
-          msgEl.appendChild(statusEl);
-        }
-
-        statusEl.innerHTML = `
-      <span class="seen-icon">${icon}</span>
-      ${names ? `<span class="seen-users">${names}</span>` : ''}
-    `;
-      }
+    socket.on('mute-state', ({ userId, isAudioMuted }) => {
+      debug.log(`User ${userId} ${isAudioMuted ? 'muted' : 'unmuted'} audio`);
     });
 
-    // Initialize the application
-    const init = () => {
-      debug.log('Initializing application');
-      utils.initDarkMode();
-      setupEventListeners();
-      setupSocketHandlers();
+    socket.on('video-state', ({ userId, isVideoOff }) => {
+      debug.log(`User ${userId} ${isVideoOff ? 'disabled' : 'enabled'} video`);
+    });
+  };
 
-      // Set initial mute button state
-      elements.muteBtn.innerHTML = state.isMuted ? '<i class="fas fa-bell-slash"></i>' : '<i class="fas fa-bell"></i>';
-      elements.muteBtn.title = state.isMuted ? 'Unmute notifications' : 'Mute notifications';
+  // Initialize Application
+  const init = () => {
+    if (!username || !room) {
+      alert('Missing username or room!');
+      window.location.href = '/';
+      return;
+    }
 
-      // Set room name
-      elements.roomName.textContent = room || 'Main Room';
-
-      // Set initial connection status
-      utils.updateConnectionStatus({ text: 'Connecting...', type: 'connecting' });
-
-      // Check for user interaction to play sounds
-      document.hasUserInteraction = false;
-      document.addEventListener('click', () => {
-        document.hasUserInteraction = true;
-      }, { once: true });
+    // Add debug commands
+    window.debugWebRTC = () => {
+      console.group('WebRTC State');
+      console.log('Current Call ID:', state.currentCallId);
+      console.log('Call Active:', state.isCallActive);
+      console.log('Call Type:', state.currentCallType);
+      console.log('Local Stream:', state.localStream);
+      console.log('Peer Connections:', state.peerConnections);
+      console.log('Remote Streams:', state.remoteStreams);
+      console.groupEnd();
     };
 
-    // Start the application
-    init();
-  }
+    debug.log('Initializing application...');
+    utils.initDarkMode();
+    elements.roomName.textContent = room;
+    elements.muteBtn.innerHTML = state.isMuted ? '<i class="fas fa-bell-slash"></i>' : '<i class="fas fa-bell"></i>';
+    elements.muteBtn.title = state.isMuted ? 'Unmute notifications' : 'Mute notifications';
+
+    // Add styles dynamically
+    const style = document.createElement('style');
+    style.textContent = `
+      .video-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 10px;
+        padding: 10px;
+        width: 100%;
+        height: calc(100% - 80px);
+        overflow-y: auto;
+      }
+      .video-container {
+        position: relative;
+        background: #000;
+        border-radius: 8px;
+        overflow: hidden;
+        aspect-ratio: 4/3;
+      }
+      .video-container video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .local-video-container video {
+        transform: scaleX(-1);
+      }
+      .video-user-label {
+        position: absolute;
+        bottom: 5px;
+        left: 5px;
+        color: #fff;
+        background: rgba(0,0,0,0.5);
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+      }
+      .local-video-container {
+        order: -1;
+      }
+      .audio-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: #f0f0f0;
+        border-radius: 8px;
+        padding: 20px;
+      }
+      .audio-icon {
+        font-size: 24px;
+        margin-bottom: 10px;
+      }
+      .typing-indicator {
+        display: flex;
+        align-items: center;
+        padding: 8px 12px;
+        color: #666;
+        font-style: italic;
+        margin-top: 5px;
+      }
+      .dots {
+        display: flex;
+        margin-right: 8px;
+      }
+      .dot {
+        width: 6px;
+        height: 6px;
+        background: #666;
+        border-radius: 50%;
+        margin: 0 2px;
+        animation: bounce 1.4s infinite ease-in-out;
+      }
+      .dot:nth-child(1) { animation-delay: -0.32s; }
+      .dot:nth-child(2) { animation-delay: -0.16s; }
+      @keyframes bounce {
+        0%, 80%, 100% { transform: translateY(0); }
+        40% { transform: translateY(-5px); }
+      }
+      .video-play-btn, .sound-permission-btn {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0,0,0,0.7);
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 50px;
+        height: 50px;
+        font-size: 20px;
+        cursor: pointer;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .sound-permission-btn {
+        position: relative;
+        top: auto;
+        left: auto;
+        transform: none;
+        margin-top: 10px;
+        border-radius: 4px;
+        padding: 8px 12px;
+        width: auto;
+        height: auto;
+      }
+      .connection-status {
+        position: fixed;
+        bottom: 10px;
+        right: 10px;
+        padding: 5px 10px;
+        border-radius: 4px;
+        font-size: 12px;
+        z-index: 1000;
+      }
+      .connection-status.connected {
+        background: #4CAF50;
+        color: white;
+      }
+      .connection-status.disconnected {
+        background: #f44336;
+        color: white;
+      }
+      .connection-status.reconnecting {
+        background: #FFC107;
+        color: black;
+      }
+      .connection-status.error {
+        background: #f44336;
+        color: white;
+      }
+      .call-ended-alert {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0,0,0,0.5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 2000;
+      }
+      .alert-content {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        max-width: 80%;
+        text-align: center;
+      }
+      .dark .alert-content {
+        background: #333;
+        color: white;
+      }
+      .message {
+        transition: transform 0.3s ease;
+        touch-action: pan-y;
+      }
+      .swipe-feedback {
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: rgba(0,0,0,0.7);
+        color: white;
+        padding: 5px 10px;
+        border-radius: 15px;
+        font-size: 12px;
+        animation: fadeIn 0.3s ease;
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-50%) translateX(20px); }
+        to { opacity: 1; transform: translateY(-50%) translateX(0); }
+      }
+      .video-controls {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        justify-content: center;
+        gap: 15px;
+        padding: 15px;
+        background: rgba(0,0,0,0.5);
+        z-index: 1001;
+      }
+      .video-controls button {
+        border: none;
+        border-radius: 50%;
+        width: 60px;
+        height: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+      }
+      .video-controls button:hover {
+        transform: scale(1.1);
+      }
+      .video-controls button i {
+        font-size: 20px;
+      }
+      .control-btn.end-btn {
+        background-color: #f44336;
+        color: white;
+      }
+      .control-btn.audio-btn {
+        background-color: #2196F3;
+        color: white;
+      }
+      .control-btn.video-btn {
+        background-color: #4CAF50;
+        color: white;
+      }
+      .control-btn.flip-btn {
+        background-color: #FFC107;
+        color: black;
+      }
+      @media (max-width: 768px) {
+        .video-grid {
+          grid-template-columns: 1fr;
+        }
+        .video-container {
+          aspect-ratio: 16/9;
+        }
+        .video-controls button {
+          width: 50px;
+          height: 50px;
+        }
+        .video-controls button i {
+          font-size: 18px;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+
+    setupEventListeners();
+    setupSocketHandlers();
+    debug.log('Application initialization complete');
+  };
+
+  init();
 });
