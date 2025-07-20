@@ -1,4 +1,3 @@
-// utils/messageStore.js
 class MessageStore {
   constructor() {
     this.messages = new Map(); // room -> [messages]
