@@ -1,4 +1,4 @@
-// main.js - Complete Client-Side Implementation
+// main.js - Updated and Optimized Client-Side Implementation
 window.addEventListener('DOMContentLoaded', () => {
   // State variables
   let hasJoined = false;
@@ -19,6 +19,8 @@ window.addEventListener('DOMContentLoaded', () => {
   let isVideoOff = false;
   let currentCallType = null;
   let currentFacingMode = 'user';
+  let reconnectAttempts = 0;
+  const MAX_RECONNECT_ATTEMPTS = 5;
 
   // DOM elements
   const msgInput = document.getElementById('msg');
@@ -33,21 +35,25 @@ window.addEventListener('DOMContentLoaded', () => {
   const videoCallBtn = document.getElementById('video-call-btn');
   const audioCallBtn = document.getElementById('audio-call-btn');
   const videoCallContainer = document.getElementById('video-call-container');
+  const connectionStatus = document.getElementById('connection-status');
 
   // Audio elements
   const notificationSound = new Audio('/sounds/notification.mp3');
   const callSound = new Audio('/sounds/call.mp3');
+  notificationSound.volume = 0.3;
+  callSound.volume = 0.5;
 
   // Query params
   const { username, room } = Qs.parse(location.search, { ignoreQueryPrefix: true });
 
-  // Socket.IO connection - Connect to HTTPS for local testing
-  const socket = io('https://localhost:3000', {
+  // Socket.IO connection
+  const socket = io({
     reconnection: true,
-    reconnectionAttempts: 5,
+    reconnectionAttempts: MAX_RECONNECT_ATTEMPTS,
     reconnectionDelay: 1000,
-    secure: true,
-    rejectUnauthorized: false // Only for local testing!
+    reconnectionDelayMax: 5000,
+    randomizationFactor: 0.5,
+    timeout: 20000
   });
 
   // Core functions
@@ -62,6 +68,12 @@ window.addEventListener('DOMContentLoaded', () => {
     const dark = localStorage.getItem('darkMode') === 'true';
     document.body.classList.toggle('dark', dark);
     chatMessages.classList.toggle('dark-bg', dark);
+  }
+
+  function updateConnectionStatus(status) {
+    if (!connectionStatus) return;
+    connectionStatus.textContent = status.text;
+    connectionStatus.className = `connection-status ${status.type}`;
   }
 
   function addMessage(msg) {
@@ -140,10 +152,18 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Video call functions
   async function addLocalTracks(pc, stream) {
-    for (const t of stream.getTracks()) pc.addTrack(t, stream);
+    for (const t of stream.getTracks()) {
+      try {
+        pc.addTrack(t, stream);
+      } catch (err) {
+        console.error('Error adding track:', err);
+      }
+    }
   }
 
   function attachRemoteStream(userId, stream) {
+    if (!stream) return;
+    
     remoteStreams[userId] = stream;
     
     if (currentCallType === 'video') {
@@ -158,51 +178,94 @@ window.addEventListener('DOMContentLoaded', () => {
   async function establishPeerConnection(userId, isInitiator = false) {
     if (!isCallActive || peerConnections[userId]) return;
     
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-    });
-    peerConnections[userId] = pc;
+    try {
+      const pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' }
+        ],
+        iceCandidatePoolSize: 10
+      });
+      peerConnections[userId] = pc;
 
-    pc.oniceconnectionstatechange = () => {
-      if (['disconnected', 'failed'].includes(pc.iceConnectionState)) {
-        removePeerConnection(userId);
+      pc.oniceconnectionstatechange = () => {
+        console.log(`ICE connection state changed to: ${pc.iceConnectionState} for ${userId}`);
+        if (['disconnected', 'failed'].includes(pc.iceConnectionState)) {
+          removePeerConnection(userId);
+        }
+      };
+
+      pc.ontrack = e => {
+        console.log('Received track from', userId);
+        attachRemoteStream(userId, e.streams[0] || new MediaStream([e.track]));
+      };
+
+      pc.onnegotiationneeded = async () => {
+        try {
+          console.log('Negotiation needed for', userId);
+          await pc.setLocalDescription(await pc.createOffer());
+          socket.emit('offer', {
+            offer: pc.localDescription,
+            room,
+            callId: currentCallId,
+            targetUser: userId
+          });
+        } catch (err) { 
+          console.error('Negotiation error:', err); 
+        }
+      };
+
+      if (localStream) {
+        try {
+          if ('addStream' in pc) {
+            pc.addStream(localStream);
+          } else {
+            await addLocalTracks(pc, localStream);
+          }
+        } catch (err) {
+          console.error('Error adding local stream:', err);
+        }
       }
-    };
 
-    pc.ontrack = e => attachRemoteStream(userId, e.streams[0] || new MediaStream([e.track]));
-    pc.onaddstream = e => attachRemoteStream(userId, e.stream);
+      pc.onicecandidate = e => {
+        if (e.candidate) {
+          socket.emit('ice-candidate', {
+            candidate: e.candidate,
+            room,
+            callId: currentCallId,
+            targetUser: userId
+          });
+        }
+      };
 
-    pc.onnegotiationneeded = async () => {
-      try {
-        await pc.setLocalDescription(await pc.createOffer());
-        socket.emit('offer', {
-          offer: pc.localDescription,
-          room,
-          callId: currentCallId,
-          targetUser: userId
-        });
-      } catch (err) { console.error(err); }
-    };
+      // Process any queued ICE candidates
+      const queue = (iceQueues[currentCallId] || {})[userId] || [];
+      for (const c of queue) {
+        try {
+          await pc.addIceCandidate(c);
+        } catch (err) {
+          console.error('Error adding ICE candidate:', err);
+        }
+      }
+      if (iceQueues[currentCallId]) iceQueues[currentCallId][userId] = [];
 
-    if (localStream) {
-      if ('addStream' in pc) pc.addStream(localStream);
-      else await addLocalTracks(pc, localStream);
+      if (isInitiator) {
+        try {
+          await pc.setLocalDescription(await pc.createOffer());
+          socket.emit('offer', {
+            offer: pc.localDescription,
+            room,
+            callId: currentCallId,
+            targetUser: userId
+          });
+        } catch (err) {
+          console.error('Error creating initial offer:', err);
+        }
+      }
+    } catch (err) {
+      console.error('Error establishing peer connection:', err);
     }
-
-    pc.onicecandidate = e => {
-      if (e.candidate) {
-        socket.emit('ice-candidate', {
-          candidate: e.candidate,
-          room,
-          callId: currentCallId,
-          targetUser: userId
-        });
-      }
-    };
-
-    const queue = (iceQueues[currentCallId] || {})[userId] || [];
-    for (const c of queue) await pc.addIceCandidate(c).catch(console.error);
-    if (iceQueues[currentCallId]) iceQueues[currentCallId][userId] = [];
   }
 
   function addVideoElement(type, userId, stream, isLocal = false) {
@@ -236,6 +299,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const playPromise = v.play();
     if (playPromise !== undefined) {
       playPromise.catch(err => {
+        console.error('Video play failed:', err);
         const playBtn = document.createElement('button');
         playBtn.className = 'video-play-btn';
         playBtn.innerHTML = '<i class="fas fa-play"></i>';
@@ -360,6 +424,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (isCallActive) return;
 
     try {
+      // Test permissions first
       const testStream = await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: t === 'video' ? { facingMode: 'user' } : false
@@ -432,6 +497,7 @@ window.addEventListener('DOMContentLoaded', () => {
     } catch (e) {
       console.error(e);
       endCall();
+      showCallEndedUI('Failed to access media devices');
     }
   }
 
@@ -439,7 +505,7 @@ window.addEventListener('DOMContentLoaded', () => {
     Object.keys(peerConnections).forEach(removePeerConnection);
     
     if (localStream) {
-      localStream.getTracks().forEach(x => x.stop());
+      localStream.getTracks().forEach(t => t.stop());
       localStream = null;
     }
     
@@ -456,7 +522,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function removePeerConnection(uid) {
     if (peerConnections[uid]) {
-      peerConnections[uid].close();
+      try {
+        peerConnections[uid].close();
+      } catch (err) {
+        console.error('Error closing peer connection:', err);
+      }
       delete peerConnections[uid];
     }
     
@@ -476,16 +546,20 @@ window.addEventListener('DOMContentLoaded', () => {
     
     if (a) {
       a.innerHTML = `<i class="fas fa-microphone${isAudioMuted ? '-slash' : ''}"></i>`;
+      a.title = isAudioMuted ? 'Unmute' : 'Mute';
     }
     
     if (v) {
       v.innerHTML = `<i class="fas fa-video${isVideoOff ? '-slash' : ''}"></i>`;
+      v.title = isVideoOff ? 'Enable video' : 'Disable video';
     }
   }
 
   async function toggleAudio() {
     isAudioMuted = !isAudioMuted;
-    localStream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
+    if (localStream) {
+      localStream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
+    }
     updateMediaButtons();
     socket.emit('mute-state', {
       room,
@@ -497,7 +571,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
   async function toggleVideo() {
     isVideoOff = !isVideoOff;
-    localStream.getVideoTracks().forEach(t => t.enabled = !isVideoOff);
+    if (localStream) {
+      localStream.getVideoTracks().forEach(t => t.enabled = !isVideoOff);
+    }
     updateMediaButtons();
     socket.emit('video-state', {
       room,
@@ -510,10 +586,10 @@ window.addEventListener('DOMContentLoaded', () => {
   async function flipCamera() {
     if (!localStream || currentCallType !== 'video') return;
     
-    localStream.getVideoTracks().forEach(t => t.stop());
-    currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-    
     try {
+      localStream.getVideoTracks().forEach(t => t.stop());
+      currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+      
       const ns = await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: { facingMode: currentFacingMode }
@@ -523,27 +599,27 @@ window.addEventListener('DOMContentLoaded', () => {
       ns.getTracks().forEach(t => localStream.addTrack(t));
       
       Object.values(peerConnections).forEach(pc => {
-        const s = pc.getSenders().find(x => x.track.kind === 'video');
+        const s = pc.getSenders().find(x => x.track?.kind === 'video');
         if (s) s.replaceTrack(localStream.getVideoTracks()[0]);
       });
       
       const lv = document.getElementById(`local-video-${username}`);
       if (lv) lv.srcObject = localStream;
     } catch (e) {
-      console.error(e);
+      console.error('Camera flip failed:', e);
     }
   }
 
   // Event listeners
-  cancelReplyBtn.onclick = e => {
+  cancelReplyBtn.addEventListener('click', e => {
     e.stopPropagation();
     replyTo = null;
     replyPreview.classList.add('d-none');
-  };
+  });
 
   chatMessages.addEventListener('touchstart', e => {
     touchStartX = e.changedTouches[0].screenX;
-  }, false);
+  }, { passive: true });
 
   chatMessages.addEventListener('touchend', e => {
     touchEndX = e.changedTouches[0].screenX;
@@ -562,9 +638,9 @@ window.addEventListener('DOMContentLoaded', () => {
         setupReply(u, id, t);
       }
     }
-  }, false);
+  }, { passive: true });
 
-  document.getElementById('chat-form').onsubmit = e => {
+  document.getElementById('chat-form').addEventListener('submit', e => {
     e.preventDefault();
     const txt = msgInput.value.trim();
     if (!txt) return;
@@ -573,22 +649,23 @@ window.addEventListener('DOMContentLoaded', () => {
     msgInput.value = '';
     replyTo = null;
     replyPreview.classList.add('d-none');
-  };
+  });
 
-  themeBtn.onclick = () => {
+  themeBtn.addEventListener('click', () => {
     const dark = !document.body.classList.toggle('dark');
     localStorage.setItem('darkMode', dark);
     chatMessages.classList.toggle('dark-bg', dark);
-  };
+  });
 
-  muteBtn.onclick = () => {
+  muteBtn.addEventListener('click', () => {
     isMuted = !isMuted;
     localStorage.setItem('isMuted', isMuted);
     muteBtn.innerHTML = isMuted ? '<i class="fas fa-bell-slash"></i>' : '<i class="fas fa-bell"></i>';
-  };
+    muteBtn.title = isMuted ? 'Unmute notifications' : 'Mute notifications';
+  });
 
-  videoCallBtn.onclick = () => startCall('video');
-  audioCallBtn.onclick = () => startCall('audio');
+  videoCallBtn.addEventListener('click', () => startCall('video'));
+  audioCallBtn.addEventListener('click', () => startCall('audio'));
 
   window.addEventListener('beforeunload', () => {
     if (isCallActive) {
@@ -598,10 +675,43 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Socket.IO handlers
   socket.on('connect', () => {
+    reconnectAttempts = 0;
+    updateConnectionStatus({ text: 'Connected', type: 'connected' });
     if (!hasJoined) {
       socket.emit('joinRoom', { username, room });
       hasJoined = true;
     }
+  });
+
+  socket.on('disconnect', (reason) => {
+    updateConnectionStatus({ text: 'Disconnected', type: 'disconnected' });
+    console.log('Disconnected:', reason);
+    if (reason === 'io server disconnect') {
+      setTimeout(() => socket.connect(), 1000);
+    }
+  });
+
+  socket.on('reconnect_attempt', (attempt) => {
+    reconnectAttempts = attempt;
+    updateConnectionStatus({ 
+      text: `Reconnecting (${attempt}/${MAX_RECONNECT_ATTEMPTS})...`, 
+      type: 'reconnecting' 
+    });
+  });
+
+  socket.on('reconnect_failed', () => {
+    updateConnectionStatus({ 
+      text: 'Failed to reconnect. Please refresh.', 
+      type: 'error' 
+    });
+  });
+
+  socket.on('connect_error', (err) => {
+    console.error('Connection error:', err);
+    updateConnectionStatus({ 
+      text: 'Connection error', 
+      type: 'error' 
+    });
   });
 
   socket.on('message', msg => {
@@ -624,23 +734,31 @@ window.addEventListener('DOMContentLoaded', () => {
   socket.on('offer', async ({ offer, userId, callId }) => {
     if (callId !== currentCallId || !isCallActive) return;
     
-    await establishPeerConnection(userId);
-    const pc = peerConnections[userId];
-    await pc.setRemoteDescription(offer);
-    const ans = await pc.createAnswer();
-    await pc.setLocalDescription(ans);
-    
-    socket.emit('answer', {
-      answer: ans,
-      room,
-      callId,
-      targetUser: userId
-    });
+    try {
+      await establishPeerConnection(userId);
+      const pc = peerConnections[userId];
+      await pc.setRemoteDescription(offer);
+      const ans = await pc.createAnswer();
+      await pc.setLocalDescription(ans);
+      
+      socket.emit('answer', {
+        answer: ans,
+        room,
+        callId,
+        targetUser: userId
+      });
+    } catch (err) {
+      console.error('Offer handling failed:', err);
+    }
   });
 
   socket.on('answer', ({ answer, userId, callId }) => {
     if (callId !== currentCallId) return;
-    peerConnections[userId]?.setRemoteDescription(answer);
+    try {
+      peerConnections[userId]?.setRemoteDescription(answer);
+    } catch (err) {
+      console.error('Answer handling failed:', err);
+    }
   });
 
   socket.on('ice-candidate', ({ candidate, userId, callId }) => {
@@ -649,7 +767,9 @@ window.addEventListener('DOMContentLoaded', () => {
       iceQueues[callId][userId] = iceQueues[callId][userId] || [];
       iceQueues[callId][userId].push(candidate);
     } else {
-      peerConnections[userId].addIceCandidate(candidate).catch(console.error);
+      peerConnections[userId].addIceCandidate(candidate).catch(err => {
+        console.error('Error adding ICE candidate:', err);
+      });
     }
   });
 
@@ -695,12 +815,14 @@ window.addEventListener('DOMContentLoaded', () => {
   function init() {
     if (!username || !room) {
       alert('Missing username or room!');
+      window.location.href = '/';
       return;
     }
 
     initDarkMode();
     roomNameElem.textContent = room;
     muteBtn.innerHTML = isMuted ? '<i class="fas fa-bell-slash"></i>' : '<i class="fas fa-bell"></i>';
+    muteBtn.title = isMuted ? 'Unmute notifications' : 'Mute notifications';
 
     // Add styles dynamically
     const style = document.createElement('style');
@@ -800,6 +922,31 @@ window.addEventListener('DOMContentLoaded', () => {
         left: auto;
         transform: none;
         margin-top: 10px;
+      }
+      .connection-status {
+        position: fixed;
+        bottom: 10px;
+        right: 10px;
+        padding: 5px 10px;
+        border-radius: 4px;
+        font-size: 12px;
+        z-index: 1000;
+      }
+      .connection-status.connected {
+        background: #4CAF50;
+        color: white;
+      }
+      .connection-status.disconnected {
+        background: #f44336;
+        color: white;
+      }
+      .connection-status.reconnecting {
+        background: #FFC107;
+        color: black;
+      }
+      .connection-status.error {
+        background: #f44336;
+        color: white;
       }
     `;
     document.head.appendChild(style);
