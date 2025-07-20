@@ -10,62 +10,60 @@ async function addLocalTracks(pc, localStream) {
 async function establishPeerConnection(userId, isInitiator = false) {
   if (!isCallActive || peerConnections[userId]) return;
 
-  const pc = new RTCPeerConnection({ iceServers: [ /* your STUNs */] });
+  const pc = new RTCPeerConnection({ iceServers: [ /* … */ ] });
   peerConnections[userId] = pc;
 
+  // clean‑up on failure/disconnect
   pc.oniceconnectionstatechange = () => {
-    if (['disconnected', 'failed'].includes(pc.iceConnectionState)) {
+    if (['disconnected','failed'].includes(pc.iceConnectionState)) {
       cleanupPeer(userId);
     }
   };
 
+  // **modern** media‑track handler
   pc.ontrack = (event) => {
-    // Try to grab the stream; if none exists, build one from the track
     let stream = event.streams[0];
     if (!stream) {
       stream = new MediaStream();
       stream.addTrack(event.track);
     }
-
-    remoteStreams[userId] = stream;
-
-    if (currentCallType === 'video') {
-      addVideoElement('remote', userId, stream);
-    } else {
-      addAudioElement(userId);
-    }
+    attachRemoteStream(userId, stream);
   };
 
+  // **legacy** Safari/iOS handler
+  pc.onaddstream = (event) => {
+    attachRemoteStream(userId, event.stream);
+  };
 
+  // negotiationneeded → offer
   pc.onnegotiationneeded = async () => {
-    console.log('🔁 negotiationneeded');
     try {
       await pc.setLocalDescription(await pc.createOffer());
-      socket.emit('offer', {
+      socket.emit('offer',{
         offer: pc.localDescription,
         room,
         callId: currentCallId,
         targetUser: userId
       });
-    } catch (err) {
-      console.error('Negotiation error:', err);
+    } catch(err){
+      console.error('negotiation error', err);
     }
   };
 
-  // 1️⃣ Add local tracks *before* negotiation
-if (localStream) await addLocalTracks(pc, localStream);
+  // add our local tracks *before* negotiation fires
+  if (localStream) {
+    // Safari still needs addStream
+    if (pc.addStream) {
+      pc.addStream(localStream);
+    } else {
+      await addLocalTracks(pc, localStream);
+    }
+  }
 
-// 2️⃣ If initiator, trigger negotiation
-if (isInitiator) {
-  try {
-    await pc.setLocalDescription(await pc.createOffer());
-    socket.emit('offer', { /* … */ });
-  } catch (err) { /* … */ }
-}
-
-  pc.onicecandidate = (e) => {
+  // ICE candidate gathering
+  pc.onicecandidate = e => {
     if (e.candidate) {
-      socket.emit('ice-candidate', {
+      socket.emit('ice-candidate',{
         candidate: e.candidate,
         room,
         callId: currentCallId,
@@ -74,13 +72,24 @@ if (isInitiator) {
     }
   };
 
-  if (iceQueues[currentCallId]?.[userId]?.length) {
-    for (const c of iceQueues[currentCallId][userId]) {
-      await pc.addIceCandidate(c).catch(console.error);
-    }
-    iceQueues[currentCallId][userId] = [];
+  // replay any queued ICEs
+  const queue = iceQueues[currentCallId]?.[userId] || [];
+  for (const c of queue) {
+    await pc.addIceCandidate(c).catch(console.error);
+  }
+  iceQueues[currentCallId][userId] = [];
+}
+
+// shared helper for both ontrack & onaddstream
+function attachRemoteStream(userId, stream) {
+  remoteStreams[userId] = stream;
+  if (currentCallType === 'video') {
+    addVideoElement('remote', userId, stream);
+  } else {
+    addAudioElement(userId);
   }
 }
+
 
 // ✅ COMPLETE WORKING VIDEO CHAT IMPLEMENTATION
 window.addEventListener('DOMContentLoaded', () => {
