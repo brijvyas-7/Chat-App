@@ -44,7 +44,6 @@ const botName = 'ChatApp Bot';
 const activeCalls = {};
 const signalingQueue = {};
 const cleanupLock = new Set();
-const callEndDebounce = new Map();
 
 const log = (category, message, data = {}) => {
   const room = data.room || '';
@@ -153,7 +152,7 @@ const cleanupCall = (room, callId) => {
 setInterval(() => {
   syncUsers(io.sockets.sockets);
   processSignalingQueue();
-}, 500);
+}, 500); // Increased frequency to 500ms
 
 io.on('connection', (socket) => {
   log('CONNECTION', `New connection: ${socket.id}`);
@@ -196,7 +195,7 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('chatMessage', ({ text, room, time }) => {
+  socket.on('chatMessage', ({ text, replyTo, room }) => {
     const user = getCurrentUser(socket.id);
     if (!user || user.room !== room) {
       log('ERROR', 'User not in room for chatMessage', { socketId: socket.id, room });
@@ -204,7 +203,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const msg = formatMessage(user.username, text, time);
+    const msg = formatMessage(user.username, text, replyTo);
     messageStore.addMessage(room, msg);
     io.to(room).emit('message', msg);
     log('MESSAGE', `Message sent in ${room} by ${user.username}`, { text });
@@ -296,9 +295,9 @@ io.on('connection', (socket) => {
   });
 
   socket.on('offer', ({ offer, room, callId, targetUser, userId }) => {
-    if (!callId || !userId || userId === targetUser) {
-      log('ERROR', 'Invalid callId, userId, or self-directed offer', { room, targetUser, userId });
-      socket.emit('error', 'Invalid or self-directed offer');
+    if (!callId || !userId) {
+      log('ERROR', 'Invalid callId or userId in offer', { room, targetUser, userId });
+      socket.emit('error', 'Invalid call ID or user ID');
       return;
     }
 
@@ -331,9 +330,9 @@ io.on('connection', (socket) => {
   });
 
   socket.on('answer', ({ answer, room, callId, targetUser, userId }) => {
-    if (!callId || !userId || userId === targetUser) {
-      log('ERROR', 'Invalid callId, userId, or self-directed answer', { room, targetUser, userId });
-      socket.emit('error', 'Invalid or self-directed answer');
+    if (!callId || !userId) {
+      log('ERROR', 'Invalid callId or userId in answer', { room, targetUser, userId });
+      socket.emit('error', 'Invalid call ID or user ID');
       return;
     }
 
@@ -366,9 +365,9 @@ io.on('connection', (socket) => {
   });
 
   socket.on('ice-candidate', ({ candidate, room, callId, targetUser, userId }) => {
-    if (!callId || !userId || userId === targetUser) {
-      log('ERROR', 'Invalid callId, userId, or self-directed ice-candidate', { room, targetUser, userId });
-      socket.emit('error', 'Invalid or self-directed ICE candidate');
+    if (!callId || !userId) {
+      log('ERROR', 'Invalid callId or userId in ice-candidate', { room, targetUser, userId });
+      socket.emit('error', 'Invalid call ID or user ID');
       return;
     }
 
@@ -401,12 +400,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on('reject-call', ({ room, callId, reason }) => {
-    if (!callId) {
-      log('ERROR', 'Invalid callId in reject-call', { room, socketId: socket.id });
-      socket.emit('error', 'Invalid call ID');
-      return;
-    }
-
     const call = activeCalls[room]?.[callId];
     if (!call) {
       log('ERROR', `Reject call for non-existent call ${callId}`, { room });
@@ -453,17 +446,10 @@ io.on('connection', (socket) => {
       return;
     }
 
-    if (callEndDebounce.has(callId)) {
-      log('CALL', `Debouncing end-call for ${callId} by ${user.username}`);
-      return;
-    }
+    log('CALL', `Call ${callId} ended by ${user.username} in ${room}`);
 
-    callEndDebounce.set(callId, setTimeout(() => {
-      log('CALL', `Call ${callId} ended by ${user.username} in ${room}`);
-      io.to(room).emit('call-ended', { callId });
-      cleanupCall(room, callId);
-      callEndDebounce.delete(callId);
-    }, 1000));
+    io.to(room).emit('call-ended', { callId });
+    cleanupCall(room, callId);
   });
 
   socket.on('get-call-participants', ({ room, callId }) => {

@@ -2,6 +2,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // State Management
   const state = {
     hasJoined: false,
+    replyTo: null,
     isMuted: localStorage.getItem('isMuted') === 'true',
     peerConnections: {},
     localStream: null,
@@ -30,14 +31,18 @@ window.addEventListener('DOMContentLoaded', () => {
     },
     callParticipants: [],
     isCallInitiator: false,
-    pendingSignaling: {},
-    polite: true
+    pendingSignaling: {}, // Store pending signaling messages
+    polite: true // Polite peer flag for offer/answer collision
   };
 
   // DOM Elements
   const elements = {
     msgInput: document.getElementById('msg'),
     chatMessages: document.getElementById('chat-messages'),
+    replyPreview: document.getElementById('reply-preview'),
+    replyUser: document.getElementById('reply-user'),
+    replyText: document.getElementById('reply-text'),
+    cancelReplyBtn: document.getElementById('cancel-reply'),
     themeBtn: document.getElementById('theme-toggle'),
     muteBtn: document.getElementById('mute-toggle'),
     roomName: document.getElementById('room-name'),
@@ -71,7 +76,7 @@ window.addEventListener('DOMContentLoaded', () => {
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
     randomizationFactor: 0.5,
-    timeout: 60000
+    timeout: 20000
   });
 
   // Utility Functions
@@ -95,7 +100,9 @@ window.addEventListener('DOMContentLoaded', () => {
         media.notificationSound.play().catch(e => debug.error('Notification sound error:', e));
       } else {
         window.pendingNotifications = window.pendingNotifications || [];
-        window.pendingNotifications.push(() => media.notificationSound.play().catch(e => debug.error('Notification sound error:', e)));
+        window.pendingNotifications.push(() => {
+          media.notificationSound.play().catch(e => debug.error('Notification sound error:', e));
+        });
       }
     },
 
@@ -109,19 +116,7 @@ window.addEventListener('DOMContentLoaded', () => {
       return `${hours}:${minutes} ${ampm}`;
     },
 
-    vibrate: (duration = 50) => {
-      if (navigator.vibrate) {
-        navigator.vibrate(duration);
-        debug.log(`Vibration triggered for ${duration}ms`);
-      }
-    },
-
     verifyUserPresence: (userId, callback) => {
-      if (userId === username) {
-        debug.warn(`Skipping presence check for self (${userId})`);
-        callback(false);
-        return;
-      }
       socket.emit('check-user-presence', { room, userId }, (response) => {
         callback(response.isPresent);
       });
@@ -141,7 +136,15 @@ window.addEventListener('DOMContentLoaded', () => {
       el.id = isSys ? '' : msg.id;
       el.className = `message ${isMe ? 'you' : 'other'}${isSys ? ' system' : ''}`;
 
-      let html = `<div class="meta">
+      let html = '';
+      if (msg.replyTo) {
+        html += `<div class="message-reply">
+              <span class="reply-sender">${msg.replyTo.username}</span>
+              <span class="reply-text">${msg.replyTo.text}</span>
+            </div>`;
+      }
+
+      html += `<div class="meta">
             ${isMe ? '<span class="prompt-sign">></span>' : ''}
             <strong>${msg.username}</strong>
             <span class="message-time">${msg.time}</span>
@@ -166,8 +169,16 @@ window.addEventListener('DOMContentLoaded', () => {
       }, 20);
     },
 
+    setupReply: (u, id, t) => {
+      debug.log('Setting up reply to:', u, id, t);
+      state.replyTo = { id, username: u, text: t };
+      elements.replyUser.textContent = u;
+      elements.replyText.textContent = t.length > 30 ? t.substr(0, 30) + '...' : t;
+      elements.replyPreview.classList.remove('d-none');
+      elements.msgInput.focus();
+    },
+
     showTypingIndicator: (u) => {
-      if (u === username) return;
       debug.log('Showing typing indicator for:', u);
       document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
 
@@ -209,10 +220,6 @@ window.addEventListener('DOMContentLoaded', () => {
   // WebRTC Functions
   const webrtc = {
     createPeerConnection: (userId) => {
-      if (userId === username) {
-        debug.warn(`Skipping peer connection creation for self (${userId})`);
-        return null;
-      }
       debug.log(`Creating peer connection for ${userId}`);
       try {
         const pc = new RTCPeerConnection({
@@ -221,7 +228,7 @@ window.addEventListener('DOMContentLoaded', () => {
             { urls: 'stun:stun1.l.google.com:19302' },
             { urls: 'stun:stun2.l.google.com:19302' },
             {
-              urls: 'turn:turn.example.com:3478',
+              urls: 'turn:turn.example.com:3478', // Replace with actual TURN server
               username: 'username',
               credential: 'password'
             }
@@ -257,7 +264,7 @@ window.addEventListener('DOMContentLoaded', () => {
         };
 
         pc.onicecandidate = (event) => {
-          if (event.candidate && pc.localDescription && state.isCallActive) {
+          if (event.candidate && pc.localDescription) {
             debug.log(`Sending ICE candidate to ${userId}`);
             utils.verifyUserPresence(userId, (isPresent) => {
               if (isPresent) {
@@ -287,6 +294,37 @@ window.addEventListener('DOMContentLoaded', () => {
             debug.log(`Attached remote stream for ${userId}`, stream.getTracks());
           } else {
             debug.warn(`No streams in track event for ${userId}`);
+          }
+        };
+
+        pc.onnegotiationneeded = async () => {
+          if (!state.isCallActive || state.makingOffer || pc.signalingState !== 'stable') {
+            debug.log(`Skipping negotiation for ${userId} (state: ${pc.signalingState}, makingOffer: ${state.makingOffer})`);
+            return;
+          }
+          try {
+            state.makingOffer = true;
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            utils.verifyUserPresence(userId, (isPresent) => {
+              if (isPresent) {
+                socket.emit('offer', {
+                  offer: pc.localDescription,
+                  room,
+                  callId: state.currentCallId,
+                  targetUser: userId,
+                  userId: username
+                });
+              } else {
+                debug.warn(`User ${userId} not present, queuing offer`);
+                state.pendingSignaling[userId] = state.pendingSignaling[userId] || [];
+                state.pendingSignaling[userId].push({ type: 'offer', data: pc.localDescription });
+              }
+            });
+          } catch (err) {
+            debug.error('Error during negotiation:', err);
+          } finally {
+            state.makingOffer = false;
           }
         };
 
@@ -332,14 +370,46 @@ window.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      webrtc.addVideoElement('remote', userId, stream, false);
+      const existing = document.getElementById(`remote-container-${userId}`);
+      if (existing) {
+        debug.log(`Removing existing video container for ${userId}`);
+        existing.remove();
+      }
+
+      const container = document.createElement('div');
+      container.className = 'video-container';
+      container.id = `remote-container-${userId}`;
+
+      const video = document.createElement('video');
+      video.id = `remote-video-${userId}`;
+      video.autoplay = true;
+      video.playsInline = true;
+
+      const label = document.createElement('div');
+      label.className = 'video-user-label';
+      label.textContent = userId;
+
+      container.appendChild(video);
+      container.appendChild(label);
+      const videoGrid = document.getElementById('video-grid');
+      if (videoGrid) {
+        videoGrid.appendChild(container);
+      } else {
+        debug.error('Video grid not found');
+        return;
+      }
+
+      video.srcObject = stream;
+      video.onloadedmetadata = () => {
+        debug.log(`Playing remote video for ${userId}`);
+        video.play().catch(e => {
+          debug.error('Video play failed:', e);
+          webrtc.showVideoPlayButton(container, video);
+        });
+      };
     },
 
     establishPeerConnection: async (userId, isInitiator = false) => {
-      if (userId === username) {
-        debug.warn(`Skipping peer connection to self (${userId})`);
-        return null;
-      }
       debug.log(`Establishing connection with ${userId}, initiator: ${isInitiator}`);
       if (state.peerConnections[userId]) {
         debug.log(`Peer connection already exists for ${userId}`);
@@ -367,6 +437,7 @@ window.addEventListener('DOMContentLoaded', () => {
         });
       }
 
+      // Process queued ICE candidates
       const queue = (state.iceQueues[state.currentCallId] || {})[userId] || [];
       debug.log(`Processing ${queue.length} queued ICE candidates for ${userId}`);
       for (const candidate of queue) {
@@ -384,6 +455,7 @@ window.addEventListener('DOMContentLoaded', () => {
         delete state.iceQueues[state.currentCallId]?.[userId];
       }
 
+      // Process pending signaling messages
       if (state.pendingSignaling[userId]) {
         debug.log(`Processing ${state.pendingSignaling[userId].length} pending signaling messages for ${userId}`);
         for (const msg of state.pendingSignaling[userId]) {
@@ -435,10 +507,6 @@ window.addEventListener('DOMContentLoaded', () => {
         debug.error('Video grid not found');
         return;
       }
-
-      const participantCount = state.callParticipants.length + (state.localStream ? 1 : 0);
-      const isTwoPersonCall = participantCount === 2;
-      g.className = `video-grid ${isTwoPersonCall ? 'two-person' : 'multi-person'}`;
 
       const existing = document.getElementById(`${type}-container-${userId}`);
       if (existing) existing.remove();
@@ -514,13 +582,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
       delete state.remoteStreams[userId];
       delete state.pendingSignaling[userId];
-      delete state.iceQueues[state.currentCallId]?.[userId];
-
-      const g = document.getElementById('video-grid');
-      if (g) {
-        const participantCount = state.callParticipants.length + (state.localStream ? 1 : 0);
-        g.className = `video-grid ${participantCount === 2 ? 'two-person' : 'multi-person'}`;
-      }
     }
   };
 
@@ -577,7 +638,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
       elements.videoCallContainer.innerHTML = `
         <div class="video-call-active">
-          <div id="video-grid" class="video-grid ${state.callParticipants.length + 1 === 2 ? 'two-person' : 'multi-person'}"></div>
+          <div id="video-grid" class="video-grid"></div>
           <div class="video-controls">${controls}</div>
         </div>
       `;
@@ -660,11 +721,11 @@ window.addEventListener('DOMContentLoaded', () => {
         });
 
         state.callTimeout = setTimeout(() => {
-          if (state.callParticipants.length === 0) {
+          if (Object.keys(state.peerConnections).length === 0) {
             callManager.endCall();
             callManager.showCallEndedUI('No one answered');
           }
-        }, 60000);
+        }, 60000); // Extended to 60 seconds
       } catch (err) {
         debug.error('Call start failed:', err);
         callManager.endCall();
@@ -723,11 +784,11 @@ window.addEventListener('DOMContentLoaded', () => {
         socket.emit('get-call-participants', { room, callId });
 
         state.callTimeout = setTimeout(() => {
-          if (state.callParticipants.length === 0) {
+          if (Object.keys(state.peerConnections).length === 0) {
             callManager.endCall();
             callManager.showCallEndedUI('Failed to establish connection');
           }
-        }, 60000);
+        }, 60000); // Extended to 60 seconds
       } catch (e) {
         debug.error('Media access failed:', e);
         callManager.endCall();
@@ -870,13 +931,18 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Event Listeners
   const setupEventListeners = () => {
+    elements.cancelReplyBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      state.replyTo = null;
+      elements.replyPreview.classList.add('d-none');
+    });
+
     elements.chatMessages.addEventListener('touchstart', e => {
       if (e.target.closest('.message')) {
         state.swipeState.active = true;
         state.swipeState.startX = e.touches[0].clientX;
         state.swipeState.currentX = state.swipeState.startX;
         state.swipeState.target = e.target.closest('.message');
-        state.swipeState.target.classList.add('swiping');
         state.swipeState.target.style.transition = 'none';
       }
     }, { passive: true });
@@ -884,10 +950,11 @@ window.addEventListener('DOMContentLoaded', () => {
     elements.chatMessages.addEventListener('touchmove', e => {
       if (state.swipeState.active) {
         e.preventDefault();
-        state.swipeState.currentX = e.touches[0].clientX;
-        const deltaX = state.swipeState.currentX - state.swipeState.startX;
-        if (deltaX > 0 && deltaX < state.SWIPE_THRESHOLD) {
-          state.swipeState.target.style.transform = `translateX(${deltaX}px)`;
+        const deltaX = e.touches[0].clientX - state.swipeState.startX;
+        if (Math.abs(deltaX) > 10) {
+          state.swipeState.currentX = e.touches[0].clientX;
+          const translateX = Math.min(0, Math.max(-100, deltaX));
+          state.swipeState.target.style.transform = `translateX(${translateX}px)`;
         }
       }
     }, { passive: false });
@@ -898,16 +965,19 @@ window.addEventListener('DOMContentLoaded', () => {
         const deltaX = state.swipeState.currentX - state.swipeState.startX;
 
         state.swipeState.target.style.transition = 'transform 0.3s ease';
-        if (deltaX > state.SWIPE_THRESHOLD / 2) {
-          state.swipeState.target.style.transform = `translateX(20px)`;
-          utils.vibrate(50);
-          setTimeout(() => {
-            state.swipeState.target.style.transform = '';
-            state.swipeState.target.classList.remove('swiping');
-          }, 300);
-        } else {
-          state.swipeState.target.style.transform = '';
-          state.swipeState.target.classList.remove('swiping');
+        state.swipeState.target.style.transform = '';
+
+        if (Math.abs(deltaX) > state.SWIPE_THRESHOLD) {
+          const u = state.swipeState.target.querySelector('.meta strong').textContent;
+          const t = state.swipeState.target.querySelector('.text').textContent;
+          const id = state.swipeState.target.id;
+          messageHandler.setupReply(u, id, t);
+
+          const feedback = document.createElement('div');
+          feedback.className = 'swipe-feedback';
+          feedback.textContent = 'Replying...';
+          state.swipeState.target.appendChild(feedback);
+          setTimeout(() => feedback.remove(), 1000);
         }
       }
     }, { passive: true });
@@ -924,11 +994,18 @@ window.addEventListener('DOMContentLoaded', () => {
       debug.log('Sending message:', txt);
       socket.emit('chatMessage', {
         text: txt,
+        replyTo: state.replyTo ? {
+          id: state.replyTo.id,
+          username: state.replyTo.username,
+          text: state.replyTo.text
+        } : null,
         room,
         time: utils.getCurrentTime()
       });
 
       elements.msgInput.value = '';
+      state.replyTo = null;
+      elements.replyPreview.classList.add('d-none');
     });
 
     elements.themeBtn.addEventListener('click', () => {
@@ -1053,7 +1130,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     socket.on('typing', ({ username: u }) => {
       debug.log(`${u} is typing`);
-      messageHandler.showTypingIndicator(u);
+      if (u !== username) messageHandler.showTypingIndicator(u);
     });
 
     socket.on('stopTyping', () => {
@@ -1064,8 +1141,9 @@ window.addEventListener('DOMContentLoaded', () => {
     socket.on('incoming-call', callManager.handleIncomingCall);
 
     socket.on('offer', async ({ offer, userId, callId }) => {
-      if (callId !== state.currentCallId || !state.isCallActive || userId === username) {
-        debug.warn(`Ignoring offer for call ${callId} from ${userId}`);
+      debug.log(`Received offer from ${userId}`);
+      if (callId !== state.currentCallId || !state.isCallActive) {
+        debug.warn(`Ignoring offer for call ${callId} (active: ${state.currentCallId})`);
         return;
       }
 
@@ -1099,6 +1177,7 @@ window.addEventListener('DOMContentLoaded', () => {
           });
         }
 
+        // Process any queued ICE candidates
         const queue = (state.iceQueues[state.currentCallId] || {})[userId] || [];
         for (const candidate of queue) {
           try {
@@ -1115,8 +1194,9 @@ window.addEventListener('DOMContentLoaded', () => {
     });
 
     socket.on('answer', async ({ answer, userId, callId }) => {
-      if (callId !== state.currentCallId || userId === username) {
-        debug.warn(`Ignoring answer for call ${callId} from ${userId}`);
+      debug.log(`Received answer from ${userId}`);
+      if (callId !== state.currentCallId) {
+        debug.warn(`Ignoring answer for call ${callId}`);
         return;
       }
       const pc = state.peerConnections[userId];
@@ -1127,6 +1207,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        // Process any queued ICE candidates
         const queue = (state.iceQueues[state.currentCallId] || {})[userId] || [];
         for (const candidate of queue) {
           try {
@@ -1143,8 +1224,9 @@ window.addEventListener('DOMContentLoaded', () => {
     });
 
     socket.on('ice-candidate', async ({ candidate, userId, callId }) => {
-      if (callId !== state.currentCallId || userId === username) {
-        debug.warn(`Ignoring ICE candidate for call ${callId} from ${userId}`);
+      debug.log(`Received ICE candidate from ${userId}`);
+      if (callId !== state.currentCallId) {
+        debug.warn(`Ignoring ICE candidate for call ${callId}`);
         return;
       }
 
@@ -1167,11 +1249,11 @@ window.addEventListener('DOMContentLoaded', () => {
     socket.on('call-participants', ({ participants, callId }) => {
       debug.log('Call participants:', participants);
       if (callId !== state.currentCallId) return;
-      state.callParticipants = participants.filter(p => p !== username);
+      state.callParticipants = participants;
 
       participants.forEach(async uid => {
         if (uid !== username && !state.peerConnections[uid]) {
-          const init = state.isCallInitiator || state.callParticipants.indexOf(username) < state.callParticipants.indexOf(uid);
+          const init = state.isCallInitiator || participants.indexOf(username) < participants.indexOf(uid);
           utils.verifyUserPresence(uid, async (isPresent) => {
             if (isPresent) {
               await webrtc.establishPeerConnection(uid, init);
@@ -1181,12 +1263,6 @@ window.addEventListener('DOMContentLoaded', () => {
           });
         }
       });
-
-      const g = document.getElementById('video-grid');
-      if (g) {
-        const participantCount = state.callParticipants.length + (state.localStream ? 1 : 0);
-        g.className = `video-grid ${participantCount === 2 ? 'two-person' : 'multi-person'}`;
-      }
     });
 
     socket.on('call-accepted', async ({ userId, callId }) => {
@@ -1209,10 +1285,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
     socket.on('call-ended', ({ callId }) => {
       debug.log('Call ended by remote peer');
-      if (callId !== state.currentCallId) {
-        debug.warn(`Ignoring call-ended for unknown call ${callId}`);
-        return;
-      }
       callManager.endCall();
       callManager.showCallEndedUI('Call ended');
     });
@@ -1220,9 +1292,6 @@ window.addEventListener('DOMContentLoaded', () => {
     socket.on('user-joined-call', async ({ userId, callId }) => {
       debug.log(`User ${userId} joined call ${callId}`);
       if (callId !== state.currentCallId) return;
-      if (!state.callParticipants.includes(userId)) {
-        state.callParticipants.push(userId);
-      }
       utils.verifyUserPresence(userId, async (isPresent) => {
         if (isPresent) {
           const init = state.isCallInitiator || state.callParticipants.indexOf(username) < state.callParticipants.indexOf(userId);
@@ -1235,18 +1304,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
     socket.on('user-left-call', ({ userId, callId }) => {
       debug.log(`${userId} left the call`);
-      if (callId !== state.currentCallId) return;
-      state.callParticipants = state.callParticipants.filter(p => p !== userId);
       webrtc.removePeerConnection(userId);
-      if (state.callParticipants.length === 0 && state.isCallActive) {
+      if (Object.keys(state.peerConnections).length === 0) {
         callManager.endCall();
         callManager.showCallEndedUI('All participants left');
-      } else {
-        const g = document.getElementById('video-grid');
-        if (g) {
-          const participantCount = state.callParticipants.length + (state.localStream ? 1 : 0);
-          g.className = `video-grid ${participantCount === 2 ? 'two-person' : 'multi-person'}`;
-        }
       }
     });
 
@@ -1301,16 +1362,6 @@ window.addEventListener('DOMContentLoaded', () => {
         width: 100%;
         height: calc(100% - 80px);
         overflow-y: auto;
-      }
-      .video-grid.two-person {
-        display: flex;
-        flex-direction: row;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .video-grid.two-person .video-container {
-        width: 48%;
-        max-height: 400px;
       }
       .video-container {
         position: relative;
@@ -1461,8 +1512,21 @@ window.addEventListener('DOMContentLoaded', () => {
         transition: transform 0.3s ease;
         touch-action: pan-y;
       }
-      .message.swiping {
-        background: rgba(0,0,0,0.1);
+      .swipe-feedback {
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: rgba(0,0,0,0.7);
+        color: white;
+        padding: 5px 10px;
+        border-radius: 15px;
+        font-size: 12px;
+        animation: fadeIn 0.3s ease;
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-50%) translateX(20px); }
+        to { opacity: 1; transform: translateY(-50%) translateX(0); }
       }
       .video-controls {
         position: fixed;
@@ -1511,13 +1575,6 @@ window.addEventListener('DOMContentLoaded', () => {
         color: black;
       }
       @media (max-width: 768px) {
-        .video-grid.two-person {
-          flex-direction: column;
-        }
-        .video-grid.two-person .video-container {
-          width: 100%;
-          max-width: 100%;
-        }
         .video-grid {
           grid-template-columns: 1fr;
         }
