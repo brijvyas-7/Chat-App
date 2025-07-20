@@ -47,7 +47,7 @@ const log = (category, message, data = {}) => {
 
 let activeCalls = {};
 const signalingQueue = {};
-let users = []; // Ensure users is accessible for logging
+let users = [];
 
 const findUserSocket = (username, room) => {
   const socket = Object.values(io.sockets.sockets).find(s => {
