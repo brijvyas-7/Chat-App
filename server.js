@@ -50,7 +50,7 @@ const log = (category, message, data = {}) => {
   const room = data.room || '';
   const users = getRoomUsers(room);
   const userState = users.map(user => `${user.username} (${user.socketId}, lastActive: ${new Date(user.lastActive).toISOString()})`).join(', ') || 'none';
-  logger.info(`[${category}] ${message}`, { ...data, activeUsers: userState });
+  logger.info(`[${category}] ${message}`, { ...data, activeUsers: userState, userCount: users.length });
 };
 
 const findUserSocket = (username, room) => {
@@ -76,7 +76,7 @@ const queueSignalingMessage = (event, data, retryCount = 0) => {
   signalingQueue[room] = signalingQueue[room] || {};
   signalingQueue[room][callId] = signalingQueue[room][callId] || [];
   signalingQueue[room][callId].push({ event, data, retryCount, timestamp: Date.now() });
-  log('SIGNALING', `Queued ${event} for ${targetUser} in call ${callId} (room: ${room})`, { retryCount });
+  log('SIGNALING', `Queued ${event} for ${targetUser} in call ${callId} (room: ${room})`, { retryCount, queueSize: signalingQueue[room][callId].length });
 };
 
 const processSignalingQueue = () => {
@@ -88,12 +88,17 @@ const processSignalingQueue = () => {
         delete signalingQueue[room][callId];
         return;
       }
+      // Remove stale messages (older than 30 seconds)
+      const now = Date.now();
+      messages = messages.filter(msg => now - msg.data.timestamp <= 30000);
+      signalingQueue[room][callId] = messages;
+
       messages.forEach(({ event, data, retryCount }, index) => {
-        if (retryCount >= 5 || Date.now() - data.timestamp > 30000) {
+        if (retryCount >= 5) {
           log('SIGNALING', `Failed to deliver ${event} to ${data.targetUser} after ${retryCount} retries`, { callId });
           const senderSocket = findUserSocket(data.userId, room);
           if (senderSocket) {
-            senderSocket.emit('error', `Failed to reach ${data.targetUser}`);
+            senderSocket.emit('error', { code: 'DELIVERY_FAILED', message: `Failed to reach ${data.targetUser}` });
             if (event === 'offer') {
               io.to(room).emit('call-ended', { callId });
               cleanupCall(room, callId);
@@ -161,14 +166,14 @@ io.on('connection', (socket) => {
   socket.on('check-user-presence', ({ room, userId }, callback) => {
     const user = getCurrentUserByUsername(userId, room);
     const isPresent = !!user && io.sockets.sockets.get(user.id)?.connected;
-    log('PRESENCE', `Checked presence for ${userId} in ${room}: ${isPresent}`);
+    log('PRESENCE', `Checked presence for ${userId} in ${room}: ${isPresent}`, { user });
     callback({ isPresent });
   });
 
   socket.on('joinRoom', ({ username, room }) => {
     if (!username || !room) {
       log('ERROR', 'Invalid joinRoom data', { username, room });
-      socket.emit('error', 'Username and room are required');
+      socket.emit('error', { code: 'INVALID_DATA', message: 'Username and room are required' });
       return;
     }
 
@@ -196,31 +201,37 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('chatMessage', ({ text, room, time }) => {
+  socket.on('chatMessage', ({ text, replyTo, room, time }) => {
     const user = getCurrentUser(socket.id);
     if (!user || user.room !== room) {
       log('ERROR', 'User not in room for chatMessage', { socketId: socket.id, room });
-      socket.emit('error', 'You must join a room first');
+      socket.emit('error', { code: 'UNAUTHORIZED', message: 'You must join a room first' });
       return;
     }
 
-    const msg = formatMessage(user.username, text, time);
+    if (replyTo && (!replyTo.id || !replyTo.username || !replyTo.text)) {
+      log('ERROR', 'Invalid replyTo data', { socketId: socket.id, replyTo });
+      socket.emit('error', { code: 'INVALID_REPLY_TO', message: 'Invalid reply-to data' });
+      return;
+    }
+
+    const msg = formatMessage(user.username, text, time, replyTo);
     messageStore.addMessage(room, msg);
     io.to(room).emit('message', msg);
-    log('MESSAGE', `Message sent in ${room} by ${user.username}`, { text });
+    log('MESSAGE', `Message sent in ${room} by ${user.username}`, { text, replyTo });
   });
 
   socket.on('call-initiate', ({ room, callId, callType, caller }) => {
     if (!room || !callId || !callType || !caller) {
       log('ERROR', 'Invalid call-initiate data', { room, callId, callType, caller });
-      socket.emit('error', 'Missing required call parameters');
+      socket.emit('error', { code: 'INVALID_DATA', message: 'Missing required call parameters' });
       return;
     }
 
     const user = getCurrentUser(socket.id);
     if (!user || user.username !== caller || user.room !== room) {
       log('ERROR', 'Unauthorized call initiation', { socketId: socket.id, caller, room });
-      socket.emit('error', 'Unauthorized call initiation');
+      socket.emit('error', { code: 'UNAUTHORIZED', message: 'Unauthorized call initiation' });
       return;
     }
 
@@ -255,21 +266,21 @@ io.on('connection', (socket) => {
   socket.on('call-accepted', ({ room, callId }) => {
     if (!callId) {
       log('ERROR', 'Invalid callId in call-accepted', { room, socketId: socket.id });
-      socket.emit('error', 'Invalid call ID');
+      socket.emit('error', { code: 'INVALID_CALL_ID', message: 'Invalid call ID' });
       return;
     }
 
     const call = activeCalls[room]?.[callId];
     if (!call) {
       log('ERROR', `Call ${callId} not found in room ${room}`);
-      socket.emit('error', `Call ${callId} not found`);
+      socket.emit('error', { code: 'CALL_NOT_FOUND', message: `Call ${callId} not found` });
       return;
     }
 
     const user = getCurrentUser(socket.id);
     if (!user || user.room !== room) {
       log('ERROR', 'User not identified for call-accepted', { socketId: socket.id });
-      socket.emit('error', 'User not identified');
+      socket.emit('error', { code: 'USER_NOT_FOUND', message: 'User not identified' });
       return;
     }
 
@@ -298,21 +309,21 @@ io.on('connection', (socket) => {
   socket.on('offer', ({ offer, room, callId, targetUser, userId }) => {
     if (!callId || !userId || userId === targetUser) {
       log('ERROR', 'Invalid callId, userId, or self-directed offer', { room, targetUser, userId });
-      socket.emit('error', 'Invalid or self-directed offer');
+      socket.emit('error', { code: 'INVALID_OFFER', message: 'Invalid or self-directed offer' });
       return;
     }
 
     const call = activeCalls[room]?.[callId];
     if (!call || !call.participants.includes(targetUser)) {
       log('ERROR', `Offer for non-existent call ${callId} or target ${targetUser} not in call`);
-      socket.emit('error', `Call ${callId} or user ${targetUser} not found`);
+      socket.emit('error', { code: 'CALL_NOT_FOUND', message: `Call ${callId} or user ${targetUser} not found` });
       return;
     }
 
     const sender = getCurrentUser(socket.id);
     if (!sender || !call.participants.includes(sender.username)) {
       log('ERROR', `Unauthorized offer from ${sender?.username || 'unknown'}`, { socketId: socket.id });
-      socket.emit('error', 'Unauthorized offer');
+      socket.emit('error', { code: 'UNAUTHORIZED', message: 'Unauthorized offer' });
       return;
     }
 
@@ -333,21 +344,21 @@ io.on('connection', (socket) => {
   socket.on('answer', ({ answer, room, callId, targetUser, userId }) => {
     if (!callId || !userId || userId === targetUser) {
       log('ERROR', 'Invalid callId, userId, or self-directed answer', { room, targetUser, userId });
-      socket.emit('error', 'Invalid or self-directed answer');
+      socket.emit('error', { code: 'INVALID_ANSWER', message: 'Invalid or self-directed answer' });
       return;
     }
 
     const call = activeCalls[room]?.[callId];
     if (!call || !call.participants.includes(targetUser)) {
       log('ERROR', `Answer for non-existent call ${callId} or target ${targetUser} not in call`);
-      socket.emit('error', `Call ${callId} or user ${targetUser} not found`);
+      socket.emit('error', { code: 'CALL_NOT_FOUND', message: `Call ${callId} or user ${targetUser} not found` });
       return;
     }
 
     const sender = getCurrentUser(socket.id);
     if (!sender || !call.participants.includes(sender.username)) {
       log('ERROR', `Unauthorized answer from ${sender?.username || 'unknown'}`, { socketId: socket.id });
-      socket.emit('error', 'Unauthorized answer');
+      socket.emit('error', { code: 'UNAUTHORIZED', message: 'Unauthorized answer' });
       return;
     }
 
@@ -368,21 +379,21 @@ io.on('connection', (socket) => {
   socket.on('ice-candidate', ({ candidate, room, callId, targetUser, userId }) => {
     if (!callId || !userId || userId === targetUser) {
       log('ERROR', 'Invalid callId, userId, or self-directed ice-candidate', { room, targetUser, userId });
-      socket.emit('error', 'Invalid or self-directed ICE candidate');
+      socket.emit('error', { code: 'INVALID_ICE_CANDIDATE', message: 'Invalid or self-directed ICE candidate' });
       return;
     }
 
     const call = activeCalls[room]?.[callId];
     if (!call || !call.participants.includes(targetUser)) {
       log('ERROR', `ICE candidate for non-existent call ${callId} or target ${targetUser} not in call`);
-      socket.emit('error', `Call ${callId} or user ${targetUser} not found`);
+      socket.emit('error', { code: 'CALL_NOT_FOUND', message: `Call ${callId} or user ${targetUser} not found` });
       return;
     }
 
     const sender = getCurrentUser(socket.id);
     if (!sender || !call.participants.includes(sender.username)) {
       log('ERROR', `Unauthorized ICE candidate from ${sender?.username || 'unknown'}`, { socketId: socket.id });
-      socket.emit('error', 'Unauthorized ICE candidate');
+      socket.emit('error', { code: 'UNAUTHORIZED', message: 'Unauthorized ICE candidate' });
       return;
     }
 
@@ -403,21 +414,21 @@ io.on('connection', (socket) => {
   socket.on('reject-call', ({ room, callId, reason }) => {
     if (!callId) {
       log('ERROR', 'Invalid callId in reject-call', { room, socketId: socket.id });
-      socket.emit('error', 'Invalid call ID');
+      socket.emit('error', { code: 'INVALID_CALL_ID', message: 'Invalid call ID' });
       return;
     }
 
     const call = activeCalls[room]?.[callId];
     if (!call) {
       log('ERROR', `Reject call for non-existent call ${callId}`, { room });
-      socket.emit('error', `Call ${callId} not found`);
+      socket.emit('error', { code: 'CALL_NOT_FOUND', message: `Call ${callId} not found` });
       return;
     }
 
     const user = getCurrentUser(socket.id);
     if (!user || user.room !== room) {
       log('ERROR', 'User not identified for reject-call', { socketId: socket.id });
-      socket.emit('error', 'User not identified');
+      socket.emit('error', { code: 'USER_NOT_FOUND', message: 'User not identified' });
       return;
     }
 
@@ -435,21 +446,21 @@ io.on('connection', (socket) => {
   socket.on('end-call', ({ room, callId }) => {
     if (!callId) {
       log('ERROR', 'Invalid callId in end-call', { room, socketId: socket.id });
-      socket.emit('error', 'Invalid call ID');
+      socket.emit('error', { code: 'INVALID_CALL_ID', message: 'Invalid call ID' });
       return;
     }
 
     const call = activeCalls[room]?.[callId];
     if (!call) {
       log('ERROR', `Call ${callId} not found in room ${room}`);
-      socket.emit('error', `Call ${callId} not found`);
+      socket.emit('error', { code: 'CALL_NOT_FOUND', message: `Call ${callId} not found` });
       return;
     }
 
     const user = getCurrentUser(socket.id);
     if (!user || user.room !== room) {
       log('ERROR', 'User not identified for end-call', { socketId: socket.id });
-      socket.emit('error', 'User not identified');
+      socket.emit('error', { code: 'USER_NOT_FOUND', message: 'User not identified' });
       return;
     }
 
@@ -463,21 +474,21 @@ io.on('connection', (socket) => {
       io.to(room).emit('call-ended', { callId });
       cleanupCall(room, callId);
       callEndDebounce.delete(callId);
-    }, 1000));
+    }, 500)); // Reduced debounce timeout to 500ms
   });
 
   socket.on('get-call-participants', ({ room, callId }) => {
     const call = activeCalls[room]?.[callId];
     if (!call) {
       log('ERROR', `Call ${callId} not found for get-call-participants`, { room });
-      socket.emit('error', `Call ${callId} not found`);
+      socket.emit('error', { code: 'CALL_NOT_FOUND', message: `Call ${callId} not found` });
       return;
     }
 
     const user = getCurrentUser(socket.id);
     if (!user || user.room !== room) {
       log('ERROR', 'User not identified for get-call-participants', { socketId: socket.id });
-      socket.emit('error', 'User not identified');
+      socket.emit('error', { code: 'USER_NOT_FOUND', message: 'User not identified' });
       return;
     }
 
@@ -492,14 +503,14 @@ io.on('connection', (socket) => {
     const call = activeCalls[room]?.[callId];
     if (!call) {
       log('ERROR', `Call ${callId} not found for mute-state`, { room });
-      socket.emit('error', `Call ${callId} not found`);
+      socket.emit('error', { code: 'CALL_NOT_FOUND', message: `Call ${callId} not found` });
       return;
     }
 
     const user = getCurrentUser(socket.id);
     if (!user || user.username !== userId || user.room !== room) {
       log('ERROR', 'Unauthorized mute-state update', { socketId: socket.id, userId });
-      socket.emit('error', 'Unauthorized mute state update');
+      socket.emit('error', { code: 'UNAUTHORIZED', message: 'Unauthorized mute state update' });
       return;
     }
 
@@ -511,14 +522,14 @@ io.on('connection', (socket) => {
     const call = activeCalls[room]?.[callId];
     if (!call) {
       log('ERROR', `Call ${callId} not found for video-state`, { room });
-      socket.emit('error', `Call ${callId} not found`);
+      socket.emit('error', { code: 'CALL_NOT_FOUND', message: `Call ${callId} not found` });
       return;
     }
 
     const user = getCurrentUser(socket.id);
     if (!user || user.username !== userId || user.room !== room) {
       log('ERROR', 'Unauthorized video-state update', { socketId: socket.id, userId });
-      socket.emit('error', 'Unauthorized video state update');
+      socket.emit('error', { code: 'UNAUTHORIZED', message: 'Unauthorized video state update' });
       return;
     }
 
