@@ -1,10 +1,10 @@
-const path = require('path');
-const http = require('http');
 const express = require('express');
+const http = require('http');
 const socketio = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
+const path = require('path');
 const formatMessage = require('./utils/messages');
-const { userJoin, getCurrentUser, userLeave, getRoomUsers } = require('./utils/users');
+const { userJoin, getCurrentUser, userLeave, getRoomUsers, syncUsers } = require('./utils/users');
 
 const app = express();
 const server = http.createServer(app);
@@ -20,17 +20,64 @@ const io = socketio(server, {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Handle favicon.ico requests to avoid 404 errors
+app.get('/favicon.ico', (req, res) => res.status(204).end());
+
 const botName = 'ChatApp Bot';
 const activeCalls = {};
+const signalingQueue = {};
 
 // Utility function to find user socket by username and room
 const findUserSocket = (username, room) => {
   return Object.values(io.sockets.sockets).find(
     s => {
       const user = getCurrentUser(s.id);
-      return user?.username === username && user?.room === room;
+      return user?.username === username && user?.room === room && s.connected;
     }
   );
+};
+
+// Queue signaling messages for retry
+const queueSignalingMessage = (event, data, retryCount = 0) => {
+  const { room, callId, targetUser } = data;
+  signalingQueue[room] = signalingQueue[room] || {};
+  signalingQueue[room][callId] = signalingQueue[room][callId] || [];
+  signalingQueue[room][callId].push({ event, data, retryCount, timestamp: Date.now() });
+};
+
+// Process queued signaling messages
+const processSignalingQueue = () => {
+  Object.entries(signalingQueue).forEach(([room, calls]) => {
+    Object.entries(calls).forEach(([callId, messages]) => {
+      messages.forEach(({ event, data, retryCount }, index) => {
+        if (retryCount >= 3 || Date.now() - data.timestamp > 10000) {
+          console.error(`Failed to deliver ${event} to ${data.targetUser} after ${retryCount} retries`);
+          const senderSocket = findUserSocket(data.userId, room);
+          if (senderSocket) {
+            senderSocket.emit('error', `Failed to reach ${data.targetUser}`);
+          }
+          messages.splice(index, 1);
+          return;
+        }
+
+        const targetSocket = findUserSocket(data.targetUser, room);
+        if (targetSocket) {
+          targetSocket.emit(event, data);
+          console.log(`🛠️ Delivered queued ${event} to ${data.targetUser}`);
+          messages.splice(index, 1);
+        } else {
+          console.log(`Retrying ${event} for ${data.targetUser} (attempt ${retryCount + 1})`);
+          messages[index].retryCount = retryCount + 1;
+        }
+      });
+      if (messages.length === 0) {
+        delete signalingQueue[room][callId];
+      }
+    });
+    if (Object.keys(calls).length === 0) {
+      delete signalingQueue[room];
+    }
+  });
 };
 
 // Broadcast call participants to all clients in the room
@@ -41,6 +88,7 @@ const broadcastCallParticipants = (room, callId) => {
     callId,
     participants: call.participants
   });
+  console.log(`📋 Call participants in ${room}:`, call.participants);
 };
 
 // Cleanup call data
@@ -48,11 +96,18 @@ const cleanupCall = (room, callId) => {
   if (activeCalls[room]?.[callId]) {
     console.log(`🧹 Cleaning up call ${callId} in room ${room}`);
     delete activeCalls[room][callId];
+    delete signalingQueue[room]?.[callId];
     if (Object.keys(activeCalls[room]).length === 0) {
       delete activeCalls[room];
     }
   }
 };
+
+// Periodically sync users and process signaling queue
+setInterval(() => {
+  syncUsers(io.sockets.sockets);
+  processSignalingQueue();
+}, 1000);
 
 io.on('connection', (socket) => {
   console.log(`New connection: ${socket.id}`);
@@ -128,7 +183,6 @@ io.on('connection', (socket) => {
       caller 
     });
 
-    // Immediately send initial participant list
     broadcastCallParticipants(room, callId);
   });
 
@@ -152,16 +206,13 @@ io.on('connection', (socket) => {
 
     console.log(`✅ Call accepted by ${user.username} in ${room}`);
     
-    // Notify all participants
     io.to(room).emit('user-joined-call', { 
       userId: user.username,
       callId
     });
 
-    // Update participant list
     broadcastCallParticipants(room, callId);
 
-    // Notify caller specifically
     const callerSocket = findUserSocket(call.participants[0], room);
     if (callerSocket) {
       callerSocket.emit('call-accepted', { 
@@ -171,16 +222,18 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('offer', ({ offer, room, callId, targetUser }) => {
+  socket.on('offer', ({ offer, room, callId, targetUser, userId }) => {
     const call = activeCalls[room]?.[callId];
     if (!call) {
       console.error(`Offer received for non-existent call ${callId}`);
+      socket.emit('error', `Call ${callId} not found`);
       return;
     }
 
     const sender = getCurrentUser(socket.id);
     if (!sender || !call.participants.includes(sender.username)) {
       console.error(`Unauthorized offer from ${sender?.username}`);
+      socket.emit('error', 'Unauthorized offer');
       return;
     }
 
@@ -193,20 +246,23 @@ io.on('connection', (socket) => {
         userId: sender.username 
       });
     } else {
-      console.error(`Target user ${targetUser} not found in room ${room}`);
+      console.warn(`Target user ${targetUser} not found in room ${room}, queuing offer`);
+      queueSignalingMessage('offer', { offer, callId, userId: sender.username, targetUser, room, timestamp: Date.now() });
     }
   });
 
-  socket.on('answer', ({ answer, room, callId, targetUser }) => {
+  socket.on('answer', ({ answer, room, callId, targetUser, userId }) => {
     const call = activeCalls[room]?.[callId];
     if (!call) {
       console.error(`Answer received for non-existent call ${callId}`);
+      socket.emit('error', `Call ${callId} not found`);
       return;
     }
 
     const sender = getCurrentUser(socket.id);
     if (!sender || !call.participants.includes(sender.username)) {
       console.error(`Unauthorized answer from ${sender?.username}`);
+      socket.emit('error', 'Unauthorized answer');
       return;
     }
 
@@ -219,20 +275,23 @@ io.on('connection', (socket) => {
         userId: sender.username
       });
     } else {
-      console.error(`Target user ${targetUser} not found in room ${room}`);
+      console.warn(`Target user ${targetUser} not found in room ${room}, queuing answer`);
+      queueSignalingMessage('answer', { answer, callId, userId: sender.username, targetUser, room, timestamp: Date.now() });
     }
   });
 
-  socket.on('ice-candidate', ({ candidate, room, callId, targetUser }) => {
+  socket.on('ice-candidate', ({ candidate, room, callId, targetUser, userId }) => {
     const call = activeCalls[room]?.[callId];
     if (!call) {
       console.error(`ICE candidate for non-existent call ${callId}`);
+      socket.emit('error', `Call ${callId} not found`);
       return;
     }
 
     const sender = getCurrentUser(socket.id);
     if (!sender || !call.participants.includes(sender.username)) {
       console.error(`Unauthorized ICE candidate from ${sender?.username}`);
+      socket.emit('error', 'Unauthorized ICE candidate');
       return;
     }
 
@@ -245,7 +304,8 @@ io.on('connection', (socket) => {
         userId: sender.username
       });
     } else {
-      console.error(`Target user ${targetUser} not found in room ${room}`);
+      console.warn(`Target user ${targetUser} not found in room ${room}, queuing ICE candidate`);
+      queueSignalingMessage('ice-candidate', { candidate, callId, userId: sender.username, targetUser, room, timestamp: Date.now() });
     }
   });
 
@@ -263,7 +323,11 @@ io.on('connection', (socket) => {
 
   socket.on('end-call', ({ room, callId }) => {
     const call = activeCalls[room]?.[callId];
-    if (!call) return;
+    if (!call) {
+      console.error(`Call ${callId} not found in room ${room}`);
+      socket.emit('error', `Call ${callId} not found`);
+      return;
+    }
 
     console.log(`📴 Ending call ${callId} in ${room}`);
     io.to(room).emit('call-ended', { callId });
@@ -291,6 +355,21 @@ io.on('connection', (socket) => {
       io.to(room).emit('call-ended', { callId });
       cleanupCall(room, callId);
     }
+  });
+
+  socket.on('mute-state', ({ room, callId, isAudioMuted, userId }) => {
+    io.to(room).emit('mute-state', { userId, isAudioMuted });
+  });
+
+  socket.on('video-state', ({ room, callId, isVideoOff, userId }) => {
+    io.to(room).emit('video-state', { userId, isVideoOff });
+  });
+
+  socket.on('getCallState', () => {
+    socket.emit('callState', {
+      activeCalls,
+      yourRooms: Array.from(socket.rooms)
+    });
   });
 
   socket.on('disconnect', () => {
@@ -325,13 +404,6 @@ io.on('connection', (socket) => {
         users: getRoomUsers(user.room)
       });
     }
-  });
-
-  socket.on('getCallState', () => {
-    socket.emit('callState', {
-      activeCalls,
-      yourRooms: Array.from(socket.rooms)
-    });
   });
 });
 

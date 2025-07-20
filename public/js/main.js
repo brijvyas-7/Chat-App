@@ -29,7 +29,8 @@ window.addEventListener('DOMContentLoaded', () => {
       currentX: 0,
       target: null
     },
-    callParticipants: [] // Added to store participant list
+    callParticipants: [],
+    isCallInitiator: false // Track if this client initiated the call
   };
 
   // DOM Elements
@@ -372,7 +373,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
       if (state.localStream) {
         debug.log('Adding local tracks to peer connection');
-        // Ensure consistent track order: audio first, then video
         const audioTracks = state.localStream.getAudioTracks();
         const videoTracks = state.localStream.getVideoTracks();
         [...audioTracks, ...videoTracks].forEach(track => {
@@ -395,7 +395,7 @@ window.addEventListener('DOMContentLoaded', () => {
       }
       delete state.iceQueues[state.currentCallId]?.[userId];
 
-      if (isInitiator && pc.signalingState === 'stable') {
+      if ((isInitiator || state.isCallInitiator) && pc.signalingState === 'stable') {
         try {
           state.makingOffer = true;
           const offer = await pc.createOffer();
@@ -609,6 +609,7 @@ window.addEventListener('DOMContentLoaded', () => {
       state.currentCallType = t;
       state.currentCallId = utils.generateId();
       state.iceQueues[state.currentCallId] = {};
+      state.isCallInitiator = true; // Mark this client as the initiator
 
       callManager.showCallingUI(t);
 
@@ -666,6 +667,7 @@ window.addEventListener('DOMContentLoaded', () => {
       state.currentCallType = callType;
       state.currentCallId = callId;
       state.iceQueues[callId] = {};
+      state.isCallInitiator = false; // Not the initiator
 
       try {
         state.localStream = await navigator.mediaDevices.getUserMedia({
@@ -723,6 +725,7 @@ window.addEventListener('DOMContentLoaded', () => {
       state.isAudioMuted = false;
       state.isVideoOff = false;
       state.callParticipants = [];
+      state.isCallInitiator = false;
       callManager.hideCallUI();
 
       if (state.currentCallId) {
@@ -1072,7 +1075,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
       participants.forEach(async uid => {
         if (uid !== username && !state.peerConnections[uid]) {
-          const init = participants.indexOf(username) < participants.indexOf(uid);
+          const init = state.isCallInitiator || participants.indexOf(username) < participants.indexOf(uid);
           await webrtc.establishPeerConnection(uid, init);
         }
       });
@@ -1081,7 +1084,7 @@ window.addEventListener('DOMContentLoaded', () => {
     socket.on('call-accepted', async ({ userId, callId }) => {
       debug.log(`✅ call-accepted from ${userId}`);
       if (callId !== state.currentCallId || !state.isCallActive) return;
-      await webrtc.establishPeerConnection(userId, true);
+      await webrtc.establishPeerConnection(userId, state.isCallInitiator);
     });
 
     socket.on('reject-call', ({ userId, callId, reason }) => {
@@ -1099,7 +1102,7 @@ window.addEventListener('DOMContentLoaded', () => {
     socket.on('user-joined-call', async ({ userId, callId }) => {
       debug.log(`User ${userId} joined call ${callId}`);
       if (callId !== state.currentCallId) return;
-      const init = state.callParticipants.indexOf(username) < state.callParticipants.indexOf(userId);
+      const init = state.isCallInitiator || state.callParticipants.indexOf(username) < state.callParticipants.indexOf(userId);
       await webrtc.establishPeerConnection(userId, init);
     });
 
@@ -1138,6 +1141,7 @@ window.addEventListener('DOMContentLoaded', () => {
       console.log('Peer Connections:', state.peerConnections);
       console.log('Remote Streams:', state.remoteStreams);
       console.log('Call Participants:', state.callParticipants);
+      console.log('Is Call Initiator:', state.isCallInitiator);
       console.groupEnd();
     };
 
