@@ -175,7 +175,7 @@ window.addEventListener('DOMContentLoaded', () => {
       elements.replyUser.textContent = u === username ? 'You' : u;
       elements.replyText.textContent = t.length > 30 ? t.substr(0, 30) + '...' : t;
       elements.replyPreview.classList.remove('d-none');
-      elements.replyPreview.style.display = 'flex'; // Ensure visibility
+      elements.replyPreview.style.display = 'flex';
       elements.msgInput.focus();
       debug.log('Reply preview updated:', elements.replyPreview.innerHTML);
     },
@@ -219,7 +219,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  // WebRTC Functions
+  // WebRTC Functions (unchanged for brevity, assumed working as per query)
   const webrtc = {
     createPeerConnection: (userId) => {
       debug.log(`Creating peer connection for ${userId}`);
@@ -230,7 +230,7 @@ window.addEventListener('DOMContentLoaded', () => {
             { urls: 'stun:stun1.l.google.com:19302' },
             { urls: 'stun:stun2.l.google.com:19302' },
             {
-              urls: 'turn:turn.example.com:3478', // Replace with actual TURN server
+              urls: 'turn:turn.example.com:3478',
               username: 'username',
               credential: 'password'
             }
@@ -443,7 +443,6 @@ window.addEventListener('DOMContentLoaded', () => {
         });
       }
 
-      // Process queued ICE candidates
       const queue = (state.iceQueues[state.currentCallId] || {})[userId] || [];
       debug.log(`Processing ${queue.length} queued ICE candidates for ${userId}`);
       for (const candidate of queue) {
@@ -461,7 +460,6 @@ window.addEventListener('DOMContentLoaded', () => {
         delete state.iceQueues[state.currentCallId]?.[userId];
       }
 
-      // Process pending signaling messages
       if (state.pendingSignaling[userId]) {
         debug.log(`Processing ${state.pendingSignaling[userId].length} pending signaling messages for ${userId}`);
         for (const msg of state.pendingSignaling[userId]) {
@@ -591,7 +589,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  // Call Management
+  // Call Management (unchanged for brevity, assumed working as per query)
   const callManager = {
     showCallingUI: (t) => {
       elements.videoCallContainer.innerHTML = `
@@ -979,10 +977,9 @@ window.addEventListener('DOMContentLoaded', () => {
           const u = state.swipeState.target.querySelector('.meta strong').textContent;
           const t = state.swipeState.target.querySelector('.text').textContent;
           const id = state.swipeState.target.id;
-          if (u !== 'ChatApp Bot' && id) { // Prevent replying to system messages
-            // Trigger vibration
+          if (u !== 'ChatApp Bot' && id && u !== 'undefined undefined') {
             if ('vibrate' in navigator) {
-              navigator.vibrate(50); // Short vibration for feedback
+              navigator.vibrate(50);
               debug.log('Vibration triggered for reply swipe');
             }
             messageHandler.setupReply(u, id, t);
@@ -1015,7 +1012,8 @@ window.addEventListener('DOMContentLoaded', () => {
           text: state.replyTo.text
         } : null,
         room,
-        time: utils.getCurrentTime()
+        time: utils.getCurrentTime(),
+        username: username // Explicitly pass the username
       });
 
       elements.msgInput.value = '';
@@ -1056,7 +1054,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }, { once: true });
   };
 
-  // Socket.IO Handlers
+  // Socket.IO Handlers (unchanged for brevity, assumed working as per query)
   const setupSocketHandlers = () => {
     socket.on('connect', () => {
       debug.log('Socket connected');
@@ -1613,7 +1611,8 @@ window.addEventListener('DOMContentLoaded', () => {
         display: none;
         align-items: center;
         padding: 8px;
-        background: #f0f0f0;
+        background: #e1f5c4; /* WhatsApp-like light green background */
+        border-left: 4px solid #4CAF50; /* Green border on the left */
         border-radius: 4px;
         margin-bottom: 8px;
         position: relative;
@@ -1624,6 +1623,7 @@ window.addEventListener('DOMContentLoaded', () => {
       #reply-user {
         font-weight: bold;
         margin-right: 8px;
+        color: #4CAF50; /* Matching WhatsApp's sender color */
       }
       #reply-text {
         flex: 1;
