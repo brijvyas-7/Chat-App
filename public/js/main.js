@@ -125,57 +125,54 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Message Handling
   const messageHandler = {
-   // In the messageHandler object, update the addMessage function:
-addMessage: (msg) => {
-  debug.log('Adding message:', msg);
-  document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
+    addMessage: (msg) => {
+      debug.log('Adding message:', msg);
+      document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
 
-  const el = document.createElement('div');
-  const isMe = msg.username === username;
-  const isSys = msg.username === 'ChatApp Bot';
+      const el = document.createElement('div');
+      const isMe = msg.username === username;
+      const isSys = msg.username === 'ChatApp Bot';
 
-  el.id = isSys ? '' : msg.id;
-  el.className = `message ${isMe ? 'you' : 'other'}${isSys ? ' system' : ''}`;
+      el.id = isSys ? '' : msg.id;
+      el.className = `message ${isMe ? 'you' : 'other'}${isSys ? ' system' : ''}`;
 
-  let html = '';
-  
-  // Add the original message preview for replies (like WhatsApp)
-  if (msg.replyTo && msg.replyTo.id && msg.replyTo.username && msg.replyTo.text && !isSys) {
-    const originalText = msg.replyTo.text.length > 30 
-      ? msg.replyTo.text.substring(0, 30) + '...' 
-      : msg.replyTo.text;
-    
-    html += `<div class="message-reply-container">
-              <div class="message-reply" onclick="document.getElementById('${msg.replyTo.id}').scrollIntoView({ behavior: 'smooth', block: 'center' })">
-                <span class="reply-sender">${msg.replyTo.username === username ? 'You' : msg.replyTo.username}</span>
-                <span class="reply-text">${originalText}</span>
-              </div>
+      let html = '';
+      
+      // Add the original message preview for replies (like WhatsApp)
+      if (msg.replyTo && msg.replyTo.id && msg.replyTo.username && msg.replyTo.text && !isSys) {
+        const originalText = msg.replyTo.text.length > 30 
+          ? msg.replyTo.text.substring(0, 30) + '...' 
+          : msg.replyTo.text;
+        
+        html += `<div class="message-reply-container" onclick="document.getElementById('${msg.replyTo.id}').scrollIntoView({ behavior: 'smooth', block: 'center' })">
+                  <span class="reply-sender">${msg.replyTo.username === username ? 'You' : msg.replyTo.username}</span>
+                  <span class="reply-text">${originalText}</span>
+                </div>`;
+      }
+
+      html += `<div class="meta">
+            <strong>${msg.username}</strong>
+            <span class="message-time">${msg.time}</span>
+          </div>
+          <div class="text">${msg.text}</div>`;
+
+      if (isMe && !isSys) {
+        const seen = msg.seenBy || [];
+        const icon = seen.length > 1 ? '✓✓' : '✓';
+        const names = seen.map(u => u === username ? 'You' : u).join(', ');
+        html += `<div class="message-status">
+              <span class="seen-icon">${icon}</span>
+              ${names ? `<span class="seen-users">${names}</span>` : ''}
             </div>`;
-  }
+      }
 
-  html += `<div class="meta">
-          <strong>${msg.username}</strong>
-          <span class="message-time">${msg.time}</span>
-        </div>
-        <div class="text">${msg.text}</div>`;
+      el.innerHTML = html;
+      elements.chatMessages.appendChild(el);
 
-  if (isMe && !isSys) {
-    const seen = msg.seenBy || [];
-    const icon = seen.length > 1 ? '✓✓' : '✓';
-    const names = seen.map(u => u === username ? 'You' : u).join(', ');
-    html += `<div class="message-status">
-          <span class="seen-icon">${icon}</span>
-          ${names ? `<span class="seen-users">${names}</span>` : ''}
-        </div>`;
-  }
-
-  el.innerHTML = html;
-  elements.chatMessages.appendChild(el);
-
-  setTimeout(() => {
-    elements.chatMessages.scrollTo({ top: elements.chatMessages.scrollHeight, behavior: 'smooth' });
-  }, 20);
-},
+      setTimeout(() => {
+        elements.chatMessages.scrollTo({ top: elements.chatMessages.scrollHeight, behavior: 'smooth' });
+      }, 20);
+    },
 
     setupReply: (u, id, t) => {
       debug.log('Setting up reply to:', { username: u, id, text: t });
@@ -686,7 +683,7 @@ addMessage: (msg) => {
       d.className = 'call-ended-alert';
       d.innerHTML = `
         <div class="alert-content">
-          <p>${m}</p>
+          <p>${typeof m === 'string' ? m : 'Call ended'}</p>
           <button id="close-alert-btn" class="btn btn-primary">OK</button>
         </div>
       `;
@@ -995,7 +992,7 @@ addMessage: (msg) => {
           const id = state.swipeState.target.id;
           if (u && t && id && u !== 'ChatApp Bot' && u !== 'undefined undefined') {
             if ('vibrate' in navigator) {
-              navigator.vibrate([50, 30, 50]); // Enhanced vibration pattern
+              navigator.vibrate([50, 30, 50]);
             }
             state.swipeState.target.style.boxShadow = '0 0 10px rgba(0,150,255,0.5)';
             setTimeout(() => {
@@ -1145,7 +1142,7 @@ addMessage: (msg) => {
 
     socket.on('error', (msg) => {
       debug.error('Server error:', msg);
-      alert(`Error: ${msg}`);
+      alert(`Error: ${typeof msg === 'string' ? msg : 'An error occurred'}`);
     });
 
     socket.on('message', msg => {
@@ -1450,7 +1447,7 @@ addMessage: (msg) => {
       }
       .small-video {
         position: absolute;
-        top: 20px;
+        bottom: 20px;
         right: 20px;
         width: 120px;
         height: 160px;
@@ -1683,30 +1680,35 @@ addMessage: (msg) => {
         font-size: 16px;
         margin-left: 8px;
       }
-      .message-reply {
+      .message-reply-container {
+        margin-bottom: 5px;
         border-left: 3px solid #4CAF50;
-        padding: 5px 10px;
-        margin: 5px 0;
-        background: rgba(0,0,0,0.03);
-        border-radius: 0 8px 8px 0;
-        cursor: pointer;
+        padding-left: 8px;
       }
-      .message-reply:hover {
+      .message-reply {
+        display: flex;
+        flex-direction: column;
+        cursor: pointer;
+        padding: 4px 8px;
         background: rgba(0,0,0,0.05);
+        border-radius: 4px;
+        max-width: 80%;
       }
       .reply-sender {
         font-weight: bold;
         color: #4CAF50;
-        display: block;
         font-size: 0.8em;
+        margin-bottom: 2px;
       }
       .reply-text {
         color: #555;
-        display: block;
         font-size: 0.9em;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+      }
+      .dark .message-reply {
+        background: rgba(255,255,255,0.1);
       }
       @media (max-width: 768px) {
         .video-grid {
