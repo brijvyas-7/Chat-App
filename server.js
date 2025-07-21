@@ -125,7 +125,7 @@ const processSignalingQueue = () => {
     if (Object.keys(calls).length === 0) {
       delete signalingQueue[room];
     }
-  });
+    });
 };
 
 const broadcastCallParticipants = (room, callId) => {
@@ -201,11 +201,11 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('chatMessage', ({ text, replyTo, room, time }) => {
+  socket.on('chatMessage', ({ text, replyTo, room, time, username }) => {
     const user = getCurrentUser(socket.id);
-    if (!user || user.room !== room) {
-      log('ERROR', 'User not in room for chatMessage', { socketId: socket.id, room });
-      socket.emit('error', { code: 'UNAUTHORIZED', message: 'You must join a room first' });
+    if (!user || user.room !== room || user.username !== username) {
+      log('ERROR', 'User not in room or username mismatch for chatMessage', { socketId: socket.id, room, username });
+      socket.emit('error', { code: 'UNAUTHORIZED', message: 'You must join a room first or username mismatch' });
       return;
     }
 
@@ -474,7 +474,7 @@ io.on('connection', (socket) => {
       io.to(room).emit('call-ended', { callId });
       cleanupCall(room, callId);
       callEndDebounce.delete(callId);
-    }, 500)); // Reduced debounce timeout to 500ms
+    }, 500));
   });
 
   socket.on('get-call-participants', ({ room, callId }) => {

@@ -137,21 +137,20 @@ window.addEventListener('DOMContentLoaded', () => {
       el.className = `message ${isMe ? 'you' : 'other'}${isSys ? ' system' : ''}`;
 
       let html = '';
-      if (msg.replyTo) {
-        html += `<div class="message-reply">
+      if (msg.replyTo && msg.replyTo.id && msg.replyTo.username && msg.replyTo.text && !isSys) {
+        html += `<div class="message-reply" onclick="document.getElementById('${msg.replyTo.id}').scrollIntoView({ behavior: 'smooth', block: 'center' })">
               <span class="reply-sender">${msg.replyTo.username}</span>
               <span class="reply-text">${msg.replyTo.text}</span>
             </div>`;
       }
 
       html += `<div class="meta">
-            ${isMe ? '<span class="prompt-sign">></span>' : ''}
             <strong>${msg.username}</strong>
             <span class="message-time">${msg.time}</span>
           </div>
           <div class="text">${msg.text}</div>`;
 
-      if (isMe) {
+      if (isMe && !isSys) {
         const seen = msg.seenBy || [];
         const icon = seen.length > 1 ? '✓✓' : '✓';
         const names = seen.map(u => u === username ? 'You' : u).join(', ');
@@ -219,7 +218,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  // WebRTC Functions (unchanged for brevity, assumed working as per query)
+  // WebRTC Functions
   const webrtc = {
     createPeerConnection: (userId) => {
       debug.log(`Creating peer connection for ${userId}`);
@@ -379,7 +378,7 @@ window.addEventListener('DOMContentLoaded', () => {
       }
 
       const container = document.createElement('div');
-      container.className = 'video-container';
+      container.className = state.callParticipants.length === 2 ? 'video-container remote-fullscreen' : 'video-container';
       container.id = `remote-container-${userId}`;
 
       const video = document.createElement('video');
@@ -515,8 +514,13 @@ window.addEventListener('DOMContentLoaded', () => {
       const existing = document.getElementById(`${type}-container-${userId}`);
       if (existing) existing.remove();
 
+      const isTwoUsers = state.callParticipants.length === 2;
+      const containerClass = isLocal && isTwoUsers ? 'video-container local-video-container small-video' :
+                            isTwoUsers && !isLocal ? 'video-container remote-fullscreen' :
+                            `video-container ${isLocal ? 'local-video-container' : ''}`;
+
       const container = document.createElement('div');
-      container.className = `video-container ${isLocal ? 'local-video-container' : ''}`;
+      container.className = containerClass;
       container.id = `${type}-container-${userId}`;
 
       const video = document.createElement('video');
@@ -589,7 +593,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  // Call Management (unchanged for brevity, assumed working as per query)
+  // Call Management
   const callManager = {
     showCallingUI: (t) => {
       elements.videoCallContainer.innerHTML = `
@@ -640,9 +644,12 @@ window.addEventListener('DOMContentLoaded', () => {
         `;
       }
 
+      const isTwoUsers = state.callParticipants.length === 2;
+      const videoGridClass = isTwoUsers ? 'video-grid full-screen' : 'video-grid';
+
       elements.videoCallContainer.innerHTML = `
         <div class="video-call-active">
-          <div id="video-grid" class="video-grid"></div>
+          <div id="video-grid" class="${videoGridClass}"></div>
           <div class="video-controls">${controls}</div>
         </div>
       `;
@@ -974,21 +981,18 @@ window.addEventListener('DOMContentLoaded', () => {
         state.swipeState.target.style.transform = '';
 
         if (Math.abs(deltaX) > state.SWIPE_THRESHOLD) {
-          const u = state.swipeState.target.querySelector('.meta strong').textContent;
-          const t = state.swipeState.target.querySelector('.text').textContent;
+          const u = state.swipeState.target.querySelector('.meta strong')?.textContent;
+          const t = state.swipeState.target.querySelector('.text')?.textContent;
           const id = state.swipeState.target.id;
-          if (u !== 'ChatApp Bot' && id && u !== 'undefined undefined') {
+          if (u && t && id && u !== 'ChatApp Bot' && u !== 'undefined undefined') {
             if ('vibrate' in navigator) {
-              navigator.vibrate(50);
-              debug.log('Vibration triggered for reply swipe');
+              navigator.vibrate([50, 30, 50]); // Enhanced vibration pattern
             }
+            state.swipeState.target.style.boxShadow = '0 0 10px rgba(0,150,255,0.5)';
+            setTimeout(() => {
+              state.swipeState.target.style.boxShadow = '';
+            }, 500);
             messageHandler.setupReply(u, id, t);
-
-            const feedback = document.createElement('div');
-            feedback.className = 'swipe-feedback';
-            feedback.textContent = 'Replying...';
-            state.swipeState.target.appendChild(feedback);
-            setTimeout(() => feedback.remove(), 1000);
           }
         }
       }
@@ -1013,7 +1017,7 @@ window.addEventListener('DOMContentLoaded', () => {
         } : null,
         room,
         time: utils.getCurrentTime(),
-        username: username // Explicitly pass the username
+        username: username
       });
 
       elements.msgInput.value = '';
@@ -1054,7 +1058,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }, { once: true });
   };
 
-  // Socket.IO Handlers (unchanged for brevity, assumed working as per query)
+  // Socket.IO Handlers
   const setupSocketHandlers = () => {
     socket.on('connect', () => {
       debug.log('Socket connected');
@@ -1276,6 +1280,16 @@ window.addEventListener('DOMContentLoaded', () => {
       if (callId !== state.currentCallId) return;
       state.callParticipants = participants;
 
+      if (state.isCallActive && state.currentCallType === 'video') {
+        callManager.showCallUI(state.currentCallType);
+        if (state.localStream) {
+          webrtc.addVideoElement('local', username, state.localStream, true);
+        }
+        Object.entries(state.remoteStreams).forEach(([userId, stream]) => {
+          webrtc.addVideoElement('remote', userId, stream);
+        });
+      }
+
       participants.forEach(async uid => {
         if (uid !== username && !state.peerConnections[uid]) {
           const init = state.isCallInitiator || participants.indexOf(username) < participants.indexOf(uid);
@@ -1396,6 +1410,11 @@ window.addEventListener('DOMContentLoaded', () => {
         height: calc(100% - 80px);
         overflow-y: auto;
       }
+      .video-grid.full-screen {
+        display: block;
+        height: 100%;
+        padding: 0;
+      }
       .video-container {
         position: relative;
         background: #000;
@@ -1409,8 +1428,36 @@ window.addEventListener('DOMContentLoaded', () => {
         height: 100%;
         object-fit: cover;
       }
+      .remote-fullscreen {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1;
+      }
       .local-video-container video {
         transform: scaleX(-1);
+      }
+      .small-video {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        width: 120px;
+        height: 160px;
+        z-index: 2;
+        border: 2px solid #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+      }
+      .small-video video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .small-video .video-user-label {
+        font-size: 10px;
+        padding: 2px 4px;
       }
       .video-user-label {
         position: absolute;
@@ -1545,21 +1592,9 @@ window.addEventListener('DOMContentLoaded', () => {
         transition: transform 0.3s ease;
         touch-action: pan-y;
       }
-      .swipe-feedback {
-        position: absolute;
-        right: 10px;
-        top: 50%;
-        transform: translateY(-50%);
-        background: rgba(0,0,0,0.7);
-        color: white;
-        padding: 5px 10px;
-        border-radius: 15px;
-        font-size: 12px;
-        animation: fadeIn 0.3s ease;
-      }
-      @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(-50%) translateX(20px); }
-        to { opacity: 1; transform: translateY(-50%) translateX(0); }
+      .message.replied {
+        background: rgba(0, 255, 0, 0.1);
+        border-left: 4px solid #4CAF50;
       }
       .video-controls {
         position: fixed;
@@ -1611,8 +1646,8 @@ window.addEventListener('DOMContentLoaded', () => {
         display: none;
         align-items: center;
         padding: 8px;
-        background: #e1f5c4; /* WhatsApp-like light green background */
-        border-left: 4px solid #4CAF50; /* Green border on the left */
+        background: #e1f5c4;
+        border-left: 4px solid #4CAF50;
         border-radius: 4px;
         margin-bottom: 8px;
         position: relative;
@@ -1623,7 +1658,7 @@ window.addEventListener('DOMContentLoaded', () => {
       #reply-user {
         font-weight: bold;
         margin-right: 8px;
-        color: #4CAF50; /* Matching WhatsApp's sender color */
+        color: #4CAF50;
       }
       #reply-text {
         flex: 1;
@@ -1639,12 +1674,41 @@ window.addEventListener('DOMContentLoaded', () => {
         font-size: 16px;
         margin-left: 8px;
       }
+      .message-reply {
+        border-left: 3px solid #4CAF50;
+        padding: 5px 10px;
+        margin: 5px 0;
+        background: rgba(0,0,0,0.03);
+        border-radius: 0 8px 8px 0;
+        cursor: pointer;
+      }
+      .message-reply:hover {
+        background: rgba(0,0,0,0.05);
+      }
+      .reply-sender {
+        font-weight: bold;
+        color: #4CAF50;
+        display: block;
+        font-size: 0.8em;
+      }
+      .reply-text {
+        color: #555;
+        display: block;
+        font-size: 0.9em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
       @media (max-width: 768px) {
         .video-grid {
           grid-template-columns: 1fr;
         }
         .video-container {
           aspect-ratio: 16/9;
+        }
+        .small-video {
+          width: 100px;
+          height: 133px;
         }
         .video-controls button {
           width: 50px;
