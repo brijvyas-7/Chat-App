@@ -125,48 +125,57 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Message Handling
   const messageHandler = {
-    addMessage: (msg) => {
-      debug.log('Adding message:', msg);
-      document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
+   // In the messageHandler object, update the addMessage function:
+addMessage: (msg) => {
+  debug.log('Adding message:', msg);
+  document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
 
-      const el = document.createElement('div');
-      const isMe = msg.username === username;
-      const isSys = msg.username === 'ChatApp Bot';
+  const el = document.createElement('div');
+  const isMe = msg.username === username;
+  const isSys = msg.username === 'ChatApp Bot';
 
-      el.id = isSys ? '' : msg.id;
-      el.className = `message ${isMe ? 'you' : 'other'}${isSys ? ' system' : ''}`;
+  el.id = isSys ? '' : msg.id;
+  el.className = `message ${isMe ? 'you' : 'other'}${isSys ? ' system' : ''}`;
 
-      let html = '';
-      if (msg.replyTo && msg.replyTo.id && msg.replyTo.username && msg.replyTo.text && !isSys) {
-        html += `<div class="message-reply" onclick="document.getElementById('${msg.replyTo.id}').scrollIntoView({ behavior: 'smooth', block: 'center' })">
-              <span class="reply-sender">${msg.replyTo.username}</span>
-              <span class="reply-text">${msg.replyTo.text}</span>
+  let html = '';
+  
+  // Add the original message preview for replies (like WhatsApp)
+  if (msg.replyTo && msg.replyTo.id && msg.replyTo.username && msg.replyTo.text && !isSys) {
+    const originalText = msg.replyTo.text.length > 30 
+      ? msg.replyTo.text.substring(0, 30) + '...' 
+      : msg.replyTo.text;
+    
+    html += `<div class="message-reply-container">
+              <div class="message-reply" onclick="document.getElementById('${msg.replyTo.id}').scrollIntoView({ behavior: 'smooth', block: 'center' })">
+                <span class="reply-sender">${msg.replyTo.username === username ? 'You' : msg.replyTo.username}</span>
+                <span class="reply-text">${originalText}</span>
+              </div>
             </div>`;
-      }
+  }
 
-      html += `<div class="meta">
-            <strong>${msg.username}</strong>
-            <span class="message-time">${msg.time}</span>
-          </div>
-          <div class="text">${msg.text}</div>`;
+  html += `<div class="meta">
+          <strong>${msg.username}</strong>
+          <span class="message-time">${msg.time}</span>
+        </div>
+        <div class="text">${msg.text}</div>`;
 
-      if (isMe && !isSys) {
-        const seen = msg.seenBy || [];
-        const icon = seen.length > 1 ? '✓✓' : '✓';
-        const names = seen.map(u => u === username ? 'You' : u).join(', ');
-        html += `<div class="message-status">
-              <span class="seen-icon">${icon}</span>
-              ${names ? `<span class="seen-users">${names}</span>` : ''}
-            </div>`;
-      }
+  if (isMe && !isSys) {
+    const seen = msg.seenBy || [];
+    const icon = seen.length > 1 ? '✓✓' : '✓';
+    const names = seen.map(u => u === username ? 'You' : u).join(', ');
+    html += `<div class="message-status">
+          <span class="seen-icon">${icon}</span>
+          ${names ? `<span class="seen-users">${names}</span>` : ''}
+        </div>`;
+  }
 
-      el.innerHTML = html;
-      elements.chatMessages.appendChild(el);
+  el.innerHTML = html;
+  elements.chatMessages.appendChild(el);
 
-      setTimeout(() => {
-        elements.chatMessages.scrollTo({ top: elements.chatMessages.scrollHeight, behavior: 'smooth' });
-      }, 20);
-    },
+  setTimeout(() => {
+    elements.chatMessages.scrollTo({ top: elements.chatMessages.scrollHeight, behavior: 'smooth' });
+  }, 20);
+},
 
     setupReply: (u, id, t) => {
       debug.log('Setting up reply to:', { username: u, id, text: t });
