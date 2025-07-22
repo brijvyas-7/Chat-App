@@ -170,7 +170,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
       if (isMe && !isSys) {
         html += `<div class="message-status">
-              <span class="seen-icon">✓</span>
+              
             </div>`;
       }
 
