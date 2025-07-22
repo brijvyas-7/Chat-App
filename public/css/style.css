@@ -1129,3 +1129,8 @@ header {
     height: 133px;
   }
 }
+.edit {
+  border: none;
+  color: #075e54;
+  background: transparent;
+}
