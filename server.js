@@ -201,25 +201,31 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('chatMessage', ({ text, replyTo, room, time, username }) => {
-    const user = getCurrentUser(socket.id);
-    if (!user || user.room !== room || user.username !== username) {
-      log('ERROR', 'User not in room or username mismatch for chatMessage', { socketId: socket.id, room, username });
-      socket.emit('error', { code: 'UNAUTHORIZED', message: 'You must join a room first or username mismatch' });
-      return;
-    }
+ socket.on('chatMessage', ({ text, replyTo, room, time, username }) => {
+  const user = getCurrentUser(socket.id);
+  if (!user || user.room !== room || user.username !== username) {
+    log('ERROR', 'User not in room or username mismatch for chatMessage', { socketId: socket.id, room, username });
+    socket.emit('error', { code: 'UNAUTHORIZED', message: 'You must join a room first or username mismatch' });
+    return;
+  }
 
-    if (replyTo && (!replyTo.id || !replyTo.username || !replyTo.text)) {
-      log('ERROR', 'Invalid replyTo data', { socketId: socket.id, replyTo });
-      socket.emit('error', { code: 'INVALID_REPLY_TO', message: 'Invalid reply-to data' });
-      return;
-    }
+  if (replyTo && (!replyTo.id || !replyTo.username || !replyTo.text)) {
+    log('ERROR', 'Invalid replyTo data', { socketId: socket.id, replyTo });
+    socket.emit('error', { code: 'INVALID_REPLY_TO', message: 'Invalid reply-to data' });
+    return;
+  }
 
-    const msg = formatMessage(user.username, text, time, replyTo);
-    messageStore.addMessage(room, msg);
-    io.to(room).emit('message', msg);
-    log('MESSAGE', `Message sent in ${room} by ${user.username}`, { text, replyTo });
+  // Correct parameter order: username, text, replyTo, time
+  const msg = formatMessage(user.username, text, replyTo, time);
+  log('MESSAGE', `Broadcasting message in ${room} by ${user.username}`, {
+    text,
+    replyTo,
+    msg: JSON.stringify(msg, null, 2)
   });
+  messageStore.addMessage(room, msg);
+  io.to(room).emit('message', msg);
+  log('MESSAGE', `Message sent in ${room} by ${user.username}`, { text, replyTo });
+});
 
   socket.on('call-initiate', ({ room, callId, callType, caller }) => {
     if (!room || !callId || !callType || !caller) {

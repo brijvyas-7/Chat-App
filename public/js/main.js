@@ -954,22 +954,28 @@ window.addEventListener('DOMContentLoaded', () => {
   };
 
   // Keyboard Handling
-  const handleKeyboard = () => {
-    if (document.activeElement === elements.msgInput) {
-      const headerHeight = elements.header.offsetHeight;
-      elements.header.style.position = 'fixed';
-      elements.header.style.top = '0';
-      elements.header.style.width = '100%';
-      elements.chatContainer.style.paddingTop = `${headerHeight}px`;
-      elements.chatMessages.style.maxHeight = 'calc(100vh - 180px)';
-    } else {
+ const handleKeyboard = () => {
+  if (document.activeElement === elements.msgInput) {
+    if (!elements.header) {
+      debug.error('Header element not found');
+      return;
+    }
+    const headerHeight = elements.header.offsetHeight;
+    elements.header.style.position = 'fixed';
+    elements.header.style.top = '0';
+    elements.header.style.width = '100%';
+    elements.chatContainer.style.paddingTop = `${headerHeight}px`;
+    elements.chatMessages.style.maxHeight = 'calc(100vh - 180px)';
+  } else {
+    if (elements.header) {
       elements.header.style.position = '';
       elements.header.style.top = '';
       elements.header.style.width = '';
-      elements.chatContainer.style.paddingTop = '0';
-      elements.chatMessages.style.maxHeight = '';
     }
-  };
+    elements.chatContainer.style.paddingTop = '0';
+    elements.chatMessages.style.maxHeight = '';
+  }
+};
 
   // Swipe Handlers
   const handleSwipeStart = (e) => {
