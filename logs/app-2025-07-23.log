@@ -1,0 +1,24 @@
+{"activeUsers":"none","level":"info","message":"[SERVER] Server running on port 3000","timestamp":"2025-07-22T18:36:18.989Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: Vbrg9VuhvF3Tqb01AAAB","timestamp":"2025-07-22T18:36:20.263Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: xm7wIXV4s2vn7pw4AAAD","timestamp":"2025-07-22T18:36:31.405Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[ROOM] bvyas928@gmail.com joined room friends","socketId":"xm7wIXV4s2vn7pw4AAAD","timestamp":"2025-07-22T18:36:31.421Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: FzaGEPNWSS94YLEtAAAF","timestamp":"2025-07-22T18:36:42.398Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[ROOM] Brij joined room friends","socketId":"FzaGEPNWSS94YLEtAAAF","timestamp":"2025-07-22T18:36:42.413Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by bvyas928@gmail.com","replyTo":null,"text":"heyy/","timestamp":"2025-07-22T18:36:54.453Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Brij","replyTo":{"id":"a8d4deac-0526-447f-a6a0-7991a8b9ed4e","text":"heyy/","username":"bvyas928@gmail.com"},"text":"Ok","timestamp":"2025-07-22T18:37:04.382Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Brij","replyTo":{"id":"a8d4deac-0526-447f-a6a0-7991a8b9ed4e","text":"heyy/","username":"bvyas928@gmail.com"},"text":"Lol","timestamp":"2025-07-22T18:37:21.468Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Brij","replyTo":null,"text":"Je","timestamp":"2025-07-22T18:37:44.154Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Brij","replyTo":null,"text":"Ff","timestamp":"2025-07-22T18:37:46.193Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Brij","replyTo":null,"text":"F","timestamp":"2025-07-22T18:37:46.456Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Brij","replyTo":null,"text":"F","timestamp":"2025-07-22T18:37:46.600Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Brij","replyTo":null,"text":"F","timestamp":"2025-07-22T18:37:46.776Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Brij","replyTo":null,"text":"G","timestamp":"2025-07-22T18:37:46.928Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Brij","replyTo":null,"text":"Y","timestamp":"2025-07-22T18:37:47.185Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Brij","replyTo":null,"text":"A","timestamp":"2025-07-22T18:37:47.459Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Brij","replyTo":null,"text":"D","timestamp":"2025-07-22T18:37:47.730Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Brij","replyTo":null,"text":"F","timestamp":"2025-07-22T18:37:47.893Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Brij","replyTo":null,"text":"F","timestamp":"2025-07-22T18:37:48.058Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Brij","replyTo":null,"text":"G","timestamp":"2025-07-22T18:37:48.280Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Brij","replyTo":null,"text":"Ghhh","timestamp":"2025-07-22T18:37:51.674Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Brij","replyTo":null,"text":"Hey","timestamp":"2025-07-22T18:37:57.562Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Brij","replyTo":null,"text":"Nkio","timestamp":"2025-07-22T18:39:10.575Z","userCount":0}

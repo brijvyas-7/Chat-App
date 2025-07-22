@@ -83,3 +83,71 @@
 {"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Lol","replyTo":null,"text":"I’m","timestamp":"2025-07-22T14:46:46.367Z","userCount":0}
 {"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Lol","replyTo":null,"text":"Why","timestamp":"2025-07-22T14:46:59.683Z","userCount":0}
 {"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Lol","replyTo":{"id":"ef910c37-60db-4642-95ed-40feea800f13","text":"Why","username":"Lol"},"text":"Hey","timestamp":"2025-07-22T14:47:06.778Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[SERVER] Server running on port 3000","timestamp":"2025-07-22T15:37:17.252Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: HLxUqEPYbquWctOXAAAB","timestamp":"2025-07-22T15:37:44.616Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[ROOM] Lol joined room friends","socketId":"HLxUqEPYbquWctOXAAAB","timestamp":"2025-07-22T15:37:44.631Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] Lol disconnected","socketId":"HLxUqEPYbquWctOXAAAB","timestamp":"2025-07-22T15:37:45.219Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: D5dlfhaQYMtvVYFRAAAD","timestamp":"2025-07-22T15:37:45.258Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[ROOM] Lol joined room friends","socketId":"D5dlfhaQYMtvVYFRAAAD","timestamp":"2025-07-22T15:37:45.264Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] Lol disconnected","socketId":"D5dlfhaQYMtvVYFRAAAD","timestamp":"2025-07-22T15:37:46.168Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: EnKCHqhXLdshCQdwAAAF","timestamp":"2025-07-22T15:37:46.194Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[ROOM] Lol joined room friends","socketId":"EnKCHqhXLdshCQdwAAAF","timestamp":"2025-07-22T15:37:46.199Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] Lol disconnected","socketId":"EnKCHqhXLdshCQdwAAAF","timestamp":"2025-07-22T15:37:47.066Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: zS31WAxRIxFijdz7AAAH","timestamp":"2025-07-22T15:37:47.097Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[ROOM] Lol joined room friends","socketId":"zS31WAxRIxFijdz7AAAH","timestamp":"2025-07-22T15:37:47.102Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] Lol disconnected","socketId":"zS31WAxRIxFijdz7AAAH","timestamp":"2025-07-22T15:37:47.852Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: xvDL9oYC6zXZZjvMAAAJ","timestamp":"2025-07-22T15:37:47.881Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[ROOM] Lol joined room friends","socketId":"xvDL9oYC6zXZZjvMAAAJ","timestamp":"2025-07-22T15:37:47.888Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] Lol disconnected","socketId":"xvDL9oYC6zXZZjvMAAAJ","timestamp":"2025-07-22T15:37:51.205Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: icK8vTBnGWTnQWnUAAAL","timestamp":"2025-07-22T15:37:53.624Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[ROOM] Brij joined room friends","socketId":"icK8vTBnGWTnQWnUAAAL","timestamp":"2025-07-22T15:37:53.649Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Brij","replyTo":null,"text":"Hey","timestamp":"2025-07-22T15:37:56.476Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Brij","replyTo":{"id":"6ce0a9c6-abea-4599-ba88-af33e78a6a85","text":"Hey","username":"Brij"},"text":"Lol","timestamp":"2025-07-22T15:37:59.968Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Brij","replyTo":null,"text":"Okay","timestamp":"2025-07-22T15:38:05.241Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Brij","replyTo":null,"text":"Hein","timestamp":"2025-07-22T15:38:09.845Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] Brij disconnected","socketId":"icK8vTBnGWTnQWnUAAAL","timestamp":"2025-07-22T15:38:19.990Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: pqmj_eDo4zWEdmKUAAAN","timestamp":"2025-07-22T15:38:20.027Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[ROOM] Brij joined room friends","socketId":"pqmj_eDo4zWEdmKUAAAN","timestamp":"2025-07-22T15:38:20.040Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] Brij disconnected","socketId":"pqmj_eDo4zWEdmKUAAAN","timestamp":"2025-07-22T15:38:21.200Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[SERVER] Server running on port 3000","timestamp":"2025-07-22T16:26:58.511Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[SERVER] Server running on port 3000","timestamp":"2025-07-22T16:32:33.022Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[SERVER] Server running on port 3000","timestamp":"2025-07-22T16:32:44.278Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[SERVER] Server running on port 3000","timestamp":"2025-07-22T16:32:46.322Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: oEuRqKWXJwdY6PRdAAAB","timestamp":"2025-07-22T16:33:48.672Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[ROOM] bvyas928@gmail.com joined room friends","socketId":"oEuRqKWXJwdY6PRdAAAB","timestamp":"2025-07-22T16:33:48.684Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: iMJuuKQC57rEpN03AAAD","timestamp":"2025-07-22T16:34:02.062Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[ROOM] Lol joined room friends","socketId":"iMJuuKQC57rEpN03AAAD","timestamp":"2025-07-22T16:34:02.077Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Lol","replyTo":null,"text":"Hey","timestamp":"2025-07-22T16:34:11.209Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Lol","replyTo":{"id":"0ce951e2-769a-4331-ad51-62a512b9f357","text":"Hey","username":"Lol"},"text":"Lol","timestamp":"2025-07-22T16:34:14.774Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Lol","replyTo":null,"text":"Hthgt","timestamp":"2025-07-22T16:34:23.519Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Lol","replyTo":null,"text":"Mst","timestamp":"2025-07-22T16:34:26.648Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Lol","replyTo":null,"text":"Hein","timestamp":"2025-07-22T16:34:31.679Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by bvyas928@gmail.com","replyTo":null,"text":"okay","timestamp":"2025-07-22T16:34:39.481Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by Lol","replyTo":{"id":"a7a9774a-2935-48f6-bc66-6f76941e951e","text":"okay","username":"bvyas928@gmail.com"},"text":"Lol","timestamp":"2025-07-22T16:34:55.392Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] Lol disconnected","socketId":"iMJuuKQC57rEpN03AAAD","timestamp":"2025-07-22T16:36:19.260Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: MdbH3VtvyK4BHW36AAAF","timestamp":"2025-07-22T16:36:31.401Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: eudTufcG41HSZqKbAAAH","timestamp":"2025-07-22T16:40:31.344Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: jz9wNVx4FU7IfbtuAAAJ","timestamp":"2025-07-22T16:45:01.757Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: pSRiGmBkEhm2exFvAAAL","timestamp":"2025-07-22T16:49:43.266Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] bvyas928@gmail.com disconnected","socketId":"oEuRqKWXJwdY6PRdAAAB","timestamp":"2025-07-22T16:50:29.991Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: 6y5iQhWocNSJr8EEAAAN","timestamp":"2025-07-22T16:50:47.394Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: q-28SNtDvGtJuTkNAAAP","timestamp":"2025-07-22T16:54:04.068Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: pH-DWg-4bwzvyIcIAAAR","timestamp":"2025-07-22T18:10:07.540Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[SERVER] Server running on port 3000","timestamp":"2025-07-22T18:12:50.406Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: hKnJZ_GP_jOcbjwRAAAB","timestamp":"2025-07-22T18:12:51.266Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[SERVER] Server running on port 3000","timestamp":"2025-07-22T18:13:00.386Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: HYEx92Km5if1ogLVAAAB","timestamp":"2025-07-22T18:13:02.260Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[SERVER] Server running on port 3000","timestamp":"2025-07-22T18:13:04.422Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: Lfrqt1cYAusWs2StAAAB","timestamp":"2025-07-22T18:13:06.262Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[ERROR] Unauthorized typing event","socketId":"Lfrqt1cYAusWs2StAAAB","timestamp":"2025-07-22T18:15:17.671Z","userCount":0,"username":"bvyas928@gmail.com"}
+{"activeUsers":"none","level":"info","message":"[ERROR] User not in room or username mismatch for chatMessage","room":"friends","socketId":"Lfrqt1cYAusWs2StAAAB","timestamp":"2025-07-22T18:15:19.205Z","userCount":0,"username":"bvyas928@gmail.com"}
+{"activeUsers":"none","level":"info","message":"[ERROR] Unauthorized stopTyping event","socketId":"Lfrqt1cYAusWs2StAAAB","timestamp":"2025-07-22T18:15:21.118Z","userCount":0,"username":"bvyas928@gmail.com"}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: sU3qw7MET0YiS3IHAAAD","timestamp":"2025-07-22T18:15:28.350Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[ROOM] bvyas928@gmail.com joined room friends","socketId":"sU3qw7MET0YiS3IHAAAD","timestamp":"2025-07-22T18:15:28.362Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by bvyas928@gmail.com","replyTo":null,"text":"dffgdf","timestamp":"2025-07-22T18:15:30.249Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by bvyas928@gmail.com","replyTo":null,"text":"dfgdfg","timestamp":"2025-07-22T18:15:30.970Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by bvyas928@gmail.com","replyTo":null,"text":"fdgg","timestamp":"2025-07-22T18:15:31.149Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[MESSAGE] Message sent in friends by bvyas928@gmail.com","replyTo":{"id":"63589b04-4792-45b0-8a6d-d777bd4fa3cf","text":"fdgg","username":"bvyas928@gmail.com"},"text":"ghm","timestamp":"2025-07-22T18:15:37.358Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] New connection: pcH7SRFMeNejrF-tAAAF","timestamp":"2025-07-22T18:26:39.782Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[ROOM] Lol joined room friends","socketId":"pcH7SRFMeNejrF-tAAAF","timestamp":"2025-07-22T18:26:39.818Z","userCount":0}
+{"activeUsers":"none","level":"info","message":"[CONNECTION] Lol disconnected","socketId":"pcH7SRFMeNejrF-tAAAF","timestamp":"2025-07-22T18:27:32.060Z","userCount":0}

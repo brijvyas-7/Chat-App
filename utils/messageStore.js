@@ -14,21 +14,7 @@ class MessageStore {
   getMessages(room) {
     return this.messages.get(room) || [];
   }
-
-  markAsSeen(room, messageId, username) {
-    const messages = this.messages.get(room);
-    if (messages) {
-      const message = messages.find(m => m.id === messageId);
-      if (message) {
-        if (!message.seenBy) message.seenBy = [];
-        if (!message.seenBy.includes(username)) {
-          message.seenBy.push(username);
-          return message;
-        }
-      }
-    }
-    return null;
-  }
+  // Remove markAsSeen completely
 }
 
 module.exports = new MessageStore();

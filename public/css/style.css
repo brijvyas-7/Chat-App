@@ -1134,3 +1134,129 @@ header {
   color: #075e54;
   background: transparent;
 }
+/* Sticky Header Fix for iOS Keyboard */
+#room-header {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  transition: all 0.3s ease;
+}
+.keyboard-active #room-header {
+  position: fixed;
+  width: 100%;
+  background: inherit;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+.keyboard-active .chat-container {
+  padding-top: 60px; /* Adjust based on header height */
+}
+
+/* Swipe Messages */
+.message {
+  transition: transform 0.3s ease;
+  touch-action: pan-y;
+}
+.message.you {
+  transform-origin: right;
+}
+.message.other {
+  transform-origin: left;
+}
+.message.swiping {
+  transition: none;
+}
+
+/* Reply Message Display */
+.message-replied {
+  background: rgba(0, 150, 255, 0.1);
+  border-left: 3px solid #4CAF50;
+  margin-bottom: 5px;
+  padding-left: 8px;
+}
+.dark .message-replied {
+  background: rgba(0, 100, 0, 0.2);
+}
+.message-reply-container {
+  display: flex;
+  flex-direction: column;
+  border-left: 3px solid #4CAF50;
+  padding-left: 8px;
+  margin-bottom: 5px;
+  cursor: pointer;
+}
+.reply-sender {
+  font-weight: bold;
+  color: #4CAF50;
+  font-size: 0.8em;
+}
+.reply-text {
+  color: #555;
+  font-size: 0.9em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dark .reply-text {
+  color: #ccc;
+}
+
+/* Input Container Fix */
+#chat-form-container {
+  position: sticky;
+  bottom: 0;
+  background: inherit;
+  padding: 10px 0;
+  z-index: 900;
+}
+.keyboard-active #chat-form-container {
+  position: fixed;
+  width: 100%;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Video Call UI Adjustments */
+.video-call-active {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2000;
+  background: #000;
+}
+.keyboard-active .video-call-active {
+  bottom: 0;
+}
+
+/* Swipe Feedback */
+.swipe-feedback {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+}
+.swipe-feedback.left {
+  left: 0;
+  background: linear-gradient(to right, rgba(76, 175, 80, 0.3), transparent);
+}
+.swipe-feedback.right {
+  right: 0;
+  background: linear-gradient(to left, rgba(33, 150, 243, 0.3), transparent);
+}
+.swipe-feedback i {
+  font-size: 24px;
+  color: white;
+}
+
+@media (max-width: 768px) {
+  .keyboard-active #room-header {
+    padding-top: env(safe-area-inset-top);
+  }
+  .keyboard-active .chat-container {
+    padding-top: calc(60px + env(safe-area-inset-top));
+  }
+}
